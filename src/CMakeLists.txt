@@ -100,7 +100,7 @@ endif()
 
 # Disable OpenDB stand-alone executable builds.
 # Simplistic findTCL fails on OSX.
-set(BUILD_PYTHON false)
+set(BUILD_PYTHON true)
 set(BUILD_TCL false)
 add_subdirectory(OpenDB)
 add_subdirectory(OpenSTA)
