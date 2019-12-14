@@ -21,6 +21,7 @@ set(OPENDB_WRAP ${CMAKE_CURRENT_BINARY_DIR}/OpenDB_wrap.cc)
 set(RESIZER_HOME ${PROJECT_SOURCE_DIR}/src/resizer)
 set(OPENDP_HOME ${PROJECT_SOURCE_DIR}/src/opendp)
 
+set(OPENPDN_HOME ${OPENROAD_HOME}/src/OpeNPDN)
 set(PDNGEN_HOME ${OPENROAD_HOME}/src/pdngen)
 
 set(IOPLACER_HOME ${PROJECT_SOURCE_DIR}/src/ioPlacer)
@@ -111,6 +112,7 @@ add_subdirectory(opendp)
 add_subdirectory(ioPlacer)
 add_subdirectory(pdngen)
 add_subdirectory(FastRoute)
+add_subdirectory(OpeNPDN)
 
 ################################################################
 
@@ -127,6 +129,7 @@ target_include_directories(openroad
   ${FASTROUTE_HOME}/include
   flute3
   ${PDNGEN_HOME}/include
+  ${OPENPDN_HOME}/include
   SYSTEM
   ${TCL_HEADER_DIR}
   )
@@ -142,6 +145,7 @@ target_link_libraries(openroad
   OpenSTA
   opendb
   FastRoute
+  openpdn
   zutil 
   zlib 
   tm

@@ -21,3 +21,7 @@
 [submodule "src/FastRoute"]
 	path = src/FastRoute
 	url = https://github.com/The-OpenROAD-Project/FastRoute.git
+[submodule "src/OpeNPDN"]
+	path = src/OpeNPDN
+	url = https://github.com/The-OpenROAD-Project/OpeNPDN.git
+	branch = OpenROAD
