@@ -27,6 +27,7 @@ class RebufferOption;
 typedef Map<LibertyCell*, float> CellTargetLoadMap;
 typedef Vector<RebufferOption*> RebufferOptionSeq;
 enum class RebufferOptionType { sink, junction, wire, buffer };
+typedef Map<Vertex*, float> VertexWeightMap;
 
 class Resizer : public StaState
 {
@@ -76,8 +77,16 @@ public:
 		LibertyCell *buffer_cell);
   Slew targetSlew(const RiseFall *tr);
   float targetLoadCap(LibertyCell *cell);
+  void repairHoldViolations(LibertyCell *buffer_cell);
+  void repairHoldViolations(Pin *end_pin,
+			    LibertyCell *buffer_cell);
   // Area of the design in meter^2.
   double designArea();
+  // Caller owns return value.
+  NetSeq *findFloatingNets();
+  void repairTieFanout(LibertyPort *tie_port,
+		       int max_fanout,
+		       bool verbose);
 
 protected:
   void ensureCorner();
@@ -156,6 +165,7 @@ protected:
   bool dontUse(LibertyCell *cell);
   bool overMaxArea();
   bool hasTopLevelOutputPort(Net *net);
+  adsPoint location(Instance *inst);
   void setLocation(Instance *inst,
 		   adsPoint pt);
   Pin *singleOutputPin(const Instance *inst);
@@ -172,7 +182,27 @@ protected:
 				     RebufferOption *ref,
 				     RebufferOption *ref2);
   void deleteRebufferOptions();
-  friend class RebufferOption;
+
+  void findFaninWeights(VertexSet &ends,
+			// Return value.
+			VertexWeightMap &weight_map);
+  float slackGap(Vertex *vertex);
+  void repairHoldViolations(VertexSet &ends,
+			    LibertyCell *buffer_cell);
+  void repairHoldPass(VertexSet &ends,
+		      LibertyCell *buffer_cell);
+  void sortFaninsByWeight(VertexWeightMap &weight_map,
+			  // Return value.
+			  VertexSeq &fanins);
+  void repairHoldBuffer(Pin *drvr_pin,
+			Slack hold_slack,
+			LibertyCell *buffer_cell);
+  void repairHoldResize(Pin *drvr_pin,
+			Slack hold_slack);
+  void findCellInstances(LibertyCell *cell,
+			 // Return value.
+			 InstanceSeq &insts);
+  int fanout(Pin *drvr_pin);
 
   float wire_res_;
   float wire_cap_;
@@ -201,6 +231,7 @@ protected:
   double core_area_;
   double design_area_;
   RebufferOptionSeq rebuffer_options_;
+  friend class RebufferOption;
 };
 
 } // namespace

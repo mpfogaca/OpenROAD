@@ -107,6 +107,13 @@ getTritonMp()
   return openroad->getTritonMp();
 }
 
+OpenRCX::Ext *
+getOpenRCX()
+{
+  OpenRoad *openroad = getOpenRoad();
+  return openroad->getOpenRCX();
+}
+
 } // namespace
 
 using ord::OpenRoad;
@@ -117,6 +124,7 @@ using ord::getDbNetwork;
 using ord::getSta;
 using ord::getResizer;
 using ord::getTritonCts;
+using ord::getOpenRCX;
 %}
 
 ////////////////////////////////////////////////////////////////
@@ -152,10 +160,10 @@ read_lef_cmd(const char *filename,
 }
 
 void
-read_def_cmd(const char *filename)
+read_def_cmd(const char *filename, bool order_wires)
 {
   OpenRoad *ord = getOpenRoad();
-  ord->readDef(filename);
+  ord->readDef(filename, order_wires);
 }
 
 void
@@ -243,26 +251,7 @@ db_has_rows()
     && db->getChip()->getBlock()->getRows().size() > 0;
 }
 
-// Defined in OpenDB/src/swig/tcl/dbhelpers.i
-bool
-db_def_diff(odb::dbDatabase *db1,
-	    const char *def_filename);
-
-bool
-def_diff(const char *def_filename)
-{
-  return db_def_diff(getDb(), def_filename);
-}
-
 %} // inline
 
 // OpenROAD swig files
 %include "InitFloorplan.i"
-
-// Diff the current database with def_filename.
-// Returns true if differences were found.
-// Unfortunately, this current does not work very well.
-// write_def/read_def produce different database layouts if
-// the database has been edited before writing.
-bool
-def_diff(const char *def_filename);

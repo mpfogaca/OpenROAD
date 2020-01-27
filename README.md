@@ -6,8 +6,16 @@ timing analysis.
 
 #### Build
 
-OpenROAD depends on OpenSTA, and OpenDB, and flute3. These source
-directories are git submodules and located in `/src`.
+The OpenROAD build requires the following packages:
+
+  * cmake 3.9
+  * gcc or clang
+  * bison
+  * flex
+  * swig 3.0
+  * boost
+  * tcl 8.5
+  * zlib
 
 ```
 git clone --recursive https://github.com/The-OpenROAD-Project/OpenROAD.git
@@ -17,6 +25,8 @@ cd build
 cmake ..
 make
 ```
+
+OpenROAD git submodules (cloned by the --recursive flag) are located in `/src`.
 
 The default build type is RELEASE to compile optimized code.
 The resulting executable is in `build/resizer`.
@@ -48,8 +58,8 @@ make DESTDIR=<prefix_path> install
 There are a set of regression tests in `/test`.
 
 ```
-test/regression fast
-src/resizer/test/regression fast
+test/regression
+src/resizer/test/regression
 
 ```
 
@@ -169,6 +179,8 @@ resize [-buffer_inputs]
        [-dont_use cells]
        [-max_utilization util]
 report_design_area
+report_floating_nets [-verbose]
+repair_tie_fanout lib_port [-max_fanout] [-verbose]
 ```
 
 The `set_wire_rc` command sets the resistance and capacitance used to
@@ -236,12 +248,22 @@ report_tns
 report_wns
 ```
 
-The report_design_area command reports the area of the design's
+The `report_design_area` command reports the area of the design's
 components and the utilization.
+
+The `report_floating_nets` command reports nets with only one pin connection.
+Use the `-verbose` flag to see the net names.
+
+The `repair_tie_fanout` command duplicates tie hi/low instances with fanout
+greater than `max_fanout`.
+
+```
+repair_tie_fanout -max_fanout 10 -verbose Nangate_typ/LOGIC1_X1/Z
+```
 
 #### Timing Analysis
 
-Timing analysis commands are documented in OpenSTA/doc/OpenSTA.pdf.
+Timing analysis commands are documented in src/OpenSTA/doc/OpenSTA.pdf.
 
 After the database has been read from LEF/DEF, Verilog or an OpenDB
 database, use the `read_liberty` command to read Liberty library files
@@ -323,6 +345,17 @@ clock_tree_synthesis -lut_file <lut_file> \
 - ```lut_file```, ```sol_list``` and ```wire_unit``` are parameters related to the technology characterization described [here](https://github.com/The-OpenROAD-Project/TritonCTS/blob/master/doc/Technology_characterization.md).
 - ``root_buffer`` is the master cell of the buffer that serves as root for the clock tree.
 - ``clk_nets`` is a string containing the names of the clock roots. If this parameter is ommitted, TritonCTS looks for the clock roots automatically.
+
+#### Repair Hold Violations
+
+The `repair_hold_violations` command inserts buffers to repair hold
+check violations. Use the `set_wire_rc` command for parasitic
+estimation.
+
+```
+repair_hold_violations -buffer_cell buffer_cell
+		       [-max_utilization util]
+```
 
 #### Global Routing
 
