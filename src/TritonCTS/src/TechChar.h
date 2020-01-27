@@ -52,6 +52,8 @@
 #include <bitset>
 #include <cassert> 
 #include <string>
+#include <deque>
+#include <set>
 
 namespace TritonCTS {
 
@@ -65,8 +67,8 @@ class WireSegment {
        uint8_t  _inputCap;
        uint8_t  _inputSlew;
        
-       std::vector<double> _bufferLocations;
-       std::vector<std::string> _bufferMasters;
+       std::deque<double> _bufferLocations;
+       std::deque<std::string> _bufferMasters;
        
 public: 
        WireSegment(uint8_t length, uint8_t load, uint8_t outputSlew,
@@ -93,8 +95,8 @@ public:
        uint8_t  getOutputSlew() const { return _outputSlew; }
        bool     isBuffered() const { return _bufferLocations.size() > 0; }
        unsigned getNumBuffers() const { return _bufferLocations.size(); }
-       std::vector<double>& getBufferLocations() { return _bufferLocations; }
-       std::vector<std::string>& getBufferMasters() { return _bufferMasters; }
+       std::deque<double>& getBufferLocations() { return _bufferLocations; }
+       std::deque<std::string>& getBufferMasters() { return _bufferMasters; }
        
        double   getBufferLocation(unsigned idx) const {
                if (idx < 0 || idx >= _bufferLocations.size()) {
@@ -134,6 +136,8 @@ public:
                                 uint8_t load, 
                                 uint8_t outputSlew, 
                                 const std::function<void(unsigned, const WireSegment&)> func) const;
+        
+        void forEachSegmentLengthReversed(const std::function<void(unsigned)>& func) const;
 
         WireSegment& createWireSegment(uint8_t length, 
                                        uint8_t load, 
@@ -191,6 +195,7 @@ protected:
 
         std::vector<WireSegment> _wireSegments;
         std::unordered_map<Key, std::vector<unsigned>> _keyToWireSegments;
+        std::set<unsigned> _segmentLengths;
 
         CtsOptions* _options;
 };

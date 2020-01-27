@@ -171,7 +171,8 @@ WireSegment& TechChar::createWireSegment(uint8_t length, uint8_t load, uint8_t o
         }              
                 
         _keyToWireSegments[key].push_back(segmentIdx);
-                
+        _segmentLengths.insert(length);
+
         return _wireSegments.back(); 
 }
 
@@ -226,6 +227,10 @@ void TechChar::forEachWireSegment(uint8_t length, uint8_t load, uint8_t outputSl
                 func(idx, _wireSegments[idx]);
         }
 };
+
+void TechChar::forEachSegmentLengthReversed(const std::function<void(unsigned)>& func) const {
+        std::for_each(_segmentLengths.rbegin(), _segmentLengths.rend(), func);
+}
 
 void TechChar::report() const {
         std::cout << "\n";
@@ -380,11 +385,15 @@ void TechChar::createFakeEntries(unsigned length, unsigned fakeLength) {
 void TechChar::reportSegment(unsigned key) const {
         const WireSegment& seg = getWireSegment(key);
 
-        std::cout << "    Key: "     << key 
-                  << " outSlew: "    << (unsigned) seg.getOutputSlew() 
-                  << " load: "       << (unsigned) seg.getLoad()
-                  << " length: "     << (unsigned) seg.getLength() 
-                  << " isBuffered: " << seg.isBuffered() << "\n";
+        std::cout << " [Key: "     << key 
+                  << " length: "      << (unsigned) seg.getLength() 
+                  << " load: "        << (unsigned) seg.getLoad()
+                  << " outSlew: "     << (unsigned) seg.getOutputSlew()
+                  << " inputCap: "    << (unsigned) seg.getInputCap()
+                  << " inputSlew: "   << (unsigned) seg.getInputSlew()
+                  << " delay: "       << (unsigned) seg.getDelay()
+                  << " power: "       << seg.getPower()
+                  << " isBuffered: "  << seg.isBuffered() << "]\n";
 }
 
 }

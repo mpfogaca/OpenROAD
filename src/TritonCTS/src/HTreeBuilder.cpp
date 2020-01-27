@@ -62,7 +62,7 @@ void HTreeBuilder::initSinkRegion() {
         std::cout << " Original sink region: " << sinkRegionDbu << "\n";
         
         _sinkRegion = sinkRegionDbu.normalize(1.0/_wireSegmentUnit);
-        std::cout << " Normalized sink region: " << _sinkRegion << "\n";
+                std::cout << " Normalized sink region: " << _sinkRegion << "\n";
         std::cout << "    Width:  " << _sinkRegion.getWidth() << "\n";
         std::cout << "    Height: " << _sinkRegion.getHeight() << "\n";
 }
@@ -71,57 +71,58 @@ void HTreeBuilder::run() {
         std::cout << " Generating H-Tree topology for net " << _clock.getName() << "...\n";
         std::cout << "    Tot. number of sinks: " << _clock.getNumSinks() << "\n";
        
-        _clockTreeMaxDepth = _options->getClockTreeMaxDepth();
         _minInputCap = _techChar->getActualMinInputCap();
         _numMaxLeafSinks = _options->getNumMaxLeafSinks();
         _minLengthSinkRegion = _techChar->getMinSegmentLength() * 2;
 
         initSinkRegion();
-        
-        for (unsigned level = 1; level <= _clockTreeMaxDepth; ++level) {
-                bool stopCriterionFound = false;
+        _clockTreeDepth = computeClockTreeDepth();
+        _topologyForEachLevel.resize(_clockTreeDepth);
+        std::cout << " Clock tree depth: " << _clockTreeDepth << "\n";
 
-                unsigned numSinksPerSubRegion = computeNumberOfSinksPerSubRegion(level);
-                double regionWidth = 0.0, regionHeight = 0.0;
-                computeSubRegionSize(level, regionWidth, regionHeight);
-
-                stopCriterionFound = isSubRegionTooSmall(regionWidth, regionHeight);
-                if (stopCriterionFound) {
-                        if (_options->isFakeLutEntriesEnabled()) {
-                                unsigned minIndex = 1;
-                                _techChar->createFakeEntries(_minLengthSinkRegion, minIndex);
-                                _minLengthSinkRegion = 1;
-                                stopCriterionFound = false;
-                        } else { 
-                                std::cout << " Stop criterion found. Min lenght of sink region is (" 
-                                          << _minLengthSinkRegion << ")\n";
-                                break;
-                        }
-                }       
-                
-                computeLevelTopology(level, regionWidth, regionHeight);
-                
-                stopCriterionFound = isNumberOfSinksTooSmall(numSinksPerSubRegion);
-                if (stopCriterionFound) {
-                        std::cout << " Stop criterion found. " 
-                                  << "Max number of sinks is (" << _numMaxLeafSinks << ")\n";
-                        break;
-                }
-                
-        }
-
-        if (_topologyForEachLevel.size() < 1) {
-                createSingleBufferClockNet();
+        if(_clockTreeDepth < 1) {
+                createSingleBufferClockNet(); 
                 return;
-        }
+        } 
         
-        if (_options->getPlotSolution()) {
-                plotSolution();
+        for (unsigned depth = _clockTreeDepth; depth >= 1; --depth) {
+               computeLevelTopology(depth); 
         }
-        
+
+        std::cout << " Computing branch locations: Level ";
+        for (unsigned depth = 1; depth <= _clockTreeDepth; ++depth) {
+                computeBranchingPoints(depth);                        
+        }
+        std::cout << "\n";
+
         createClockSubNets();
 
-        std::cout << " Clock topology of net \"" << _clock.getName() << "\" done.\n";
+}
+
+unsigned HTreeBuilder::computeClockTreeDepth() {
+        unsigned clockTreeMaxDepth = _options->getClockTreeMaxDepth();
+        
+        for (unsigned depth = 1; depth <= clockTreeMaxDepth; ++depth) {
+                double width  = 0;
+                double height = 0;
+                computeSubRegionSize(depth, width, height);
+                if (isSubRegionTooSmall(width, height)) {
+                        if (_options->isFakeLutEntriesEnabled() && _minLengthSinkRegion) {
+                                unsigned minIndex = 1;
+                                _techChar->createFakeEntries(_minLengthSinkRegion, minIndex);
+                                _minLengthSinkRegion = 2 * minIndex;
+                        } else {
+                                return depth - 1;
+                        }
+                }
+
+                unsigned numSinksPerSubRegion = computeNumberOfSinksPerSubRegion(depth); 
+                if (isNumberOfSinksTooSmall(numSinksPerSubRegion)) {
+                        return depth;
+                }         
+        }          
+        
+        return 0;
 }
 
 inline 
@@ -140,14 +141,19 @@ void HTreeBuilder::computeSubRegionSize(unsigned level, double& width, double& h
         height = _sinkRegion.getHeight() / gridSizeY;
 }
 
-void HTreeBuilder::computeLevelTopology(unsigned level, double width, double height) {
+void HTreeBuilder::computeLevelTopology(unsigned level) {
         unsigned numSinksPerSubRegion = computeNumberOfSinksPerSubRegion(level);
+        
+        double width  = 0.0;
+        double height = 0.0;
+        computeSubRegionSize(level, width, height);
+        
         std::cout << " Level " << level << "\n";
         std::cout << "    Direction: " << ((isVertical(level)) ? ("Vertical") : ("Horizontal")) 
                   << "\n";
         std::cout << "    # sinks per sub-region: " << numSinksPerSubRegion << "\n";        
         std::cout << "    Sub-region size: " << width << " X " << height << "\n";      
-       
+      
         unsigned minLength = _minLengthSinkRegion / 2;
         unsigned segmentLength = std::round(width/(2.0*minLength))*minLength;
         if (isVertical(level)) {
@@ -156,143 +162,110 @@ void HTreeBuilder::computeLevelTopology(unsigned level, double width, double hei
         segmentLength = std::max<unsigned>(segmentLength, 1);        
         
         LevelTopology topology(segmentLength);
-        
         std::cout << "    Segment length (rounded): " << segmentLength << "\n";
-
-        unsigned inputCap = _minInputCap, inputSlew = 1;
-        if (level > 1) {
-                const LevelTopology &previousLevel = _topologyForEachLevel[level-2];
-                inputCap  = previousLevel.getOutputCap();
-                inputSlew = previousLevel.getOutputSlew();
+      
+        unsigned load = 1;
+        unsigned outSlew = 1; 
+        if (level == _clockTreeDepth) {
+                load = numSinksPerSubRegion;
+                outSlew = _options->getMaxSlew();
+        } else {
+                load = _topologyForEachLevel[level].getInputCap();
+                outSlew = _topologyForEachLevel[level].getInputSlew();                              
         }
 
-        const unsigned SLEW_THRESHOLD = _options->getMaxSlew();
-        const unsigned INIT_TOLERANCE = 1;
+        std::cout << "    Load: " << load; 
+        std::cout << " Output slew: " << outSlew << "\n"; 
+        
         unsigned currLength = 0;
-        for (unsigned charSegLength = _techChar->getMaxSegmentLength(); charSegLength >= 1; --charSegLength) {
+        _techChar->forEachSegmentLengthReversed( [&] (unsigned charSegLength) {
                 unsigned numWires = (segmentLength - currLength) / charSegLength;
-                
+                 
                 if (numWires < 1) {
-                        continue;
+                        return;
                 }
-
+                
                 currLength += numWires * charSegLength;
                 for (unsigned wireCount = 0; wireCount < numWires; ++wireCount) {
-                        unsigned outCap = 0, outSlew = 0;
-                        unsigned key = computeMinDelaySegment(charSegLength, inputSlew, inputCap, 
-                                                              SLEW_THRESHOLD, INIT_TOLERANCE, outSlew, outCap);
-                        
-                        _techChar->reportSegment(key);
-
-                        inputCap = std::max(outCap, _minInputCap);
-                        inputSlew = outSlew;
+                        unsigned inputCap = 0, inputSlew = 0;
+                        unsigned tolerance = 0;
+                        unsigned key = computeMinDelaySegment(charSegLength, load, outSlew,
+                                                              inputCap, inputSlew, tolerance);
+                        load = inputCap;
+                        outSlew = inputSlew;
                         topology.addWireSegment(key); 
                 }
-
-                if (currLength == segmentLength) {
-                        break;
-                }
-        }
-       
-        topology.setOutputSlew(inputSlew);
-        topology.setOutputCap(inputCap);
-
-        computeBranchingPoints(level, topology);
-        _topologyForEachLevel.push_back(topology);
-}
-
-unsigned HTreeBuilder::computeMinDelaySegment(unsigned length) const {
-        unsigned minKey   = std::numeric_limits<unsigned>::max();
-        unsigned minDelay = std::numeric_limits<unsigned>::max();
+        });
         
-        _techChar->forEachWireSegment(length, 1, 1,
-                [&] (unsigned key, const WireSegment& seg) {
-                        if (!seg.isBuffered()) {
-                                return;
-                        }
-                        if (seg.getDelay() < minDelay) {
-                                minKey = key;
-                                minDelay = seg.getDelay();                                
-                        } 
-                });                
+        topology.setInputSlew(outSlew);
+        topology.setInputCap(load);
         
-        return minKey;        
+        //computeBranchingPoints(level, topology);
+        
+        _topologyForEachLevel[level-1] = topology;
 }
 
-unsigned HTreeBuilder::computeMinDelaySegment(unsigned length, unsigned inputSlew, unsigned inputCap, unsigned slewThreshold, 
-                                              unsigned tolerance, unsigned &outputSlew, unsigned &outputCap ) const {
-        unsigned minKey      = std::numeric_limits<unsigned>::max();
-        unsigned minDelay    = std::numeric_limits<unsigned>::max();
-        unsigned minBufKey   = std::numeric_limits<unsigned>::max();
-        unsigned minBufDelay = std::numeric_limits<unsigned>::max();
-      
-        for (unsigned load = 1; load <= _techChar->getMaxCapacitance(); ++load) {
-                for (unsigned outSlew = 1; outSlew <= _techChar->getMaxSlew(); ++outSlew) {
-                        _techChar->forEachWireSegment(length, load, outSlew,
-                                [&] (unsigned key, const WireSegment& seg) {
-                                        //if (seg.getInputCap() != inputCap || seg.getInputSlew() != inputSlew) {
-                                        //        return;
-                                        //}
+unsigned HTreeBuilder::computeMinDelaySegment(unsigned length, unsigned targetLoad, unsigned targetOutSlew,
+                                              unsigned &inputCap, unsigned &inputSlew, unsigned tolerance) const {
+        unsigned minDelaySegKey = INVALID_KEY;
+        unsigned minDelay = DELAY_MAX;
+        
+        unsigned numWireSegments = 0;
+        
+        unsigned minLoad = (targetLoad <= tolerance) ? (0) : (targetLoad - tolerance);
+        unsigned maxLoad = targetLoad + tolerance;
+        unsigned minOutSlew = (targetOutSlew <= tolerance) ? (0) : (targetOutSlew - tolerance);
+        unsigned maxOutSlew = targetOutSlew + tolerance;
 
-                                        //std::cout << "[" << length << ", " << load << ", " << outSlew << "] =  "
-                                        //          << (unsigned) seg.getLength() << ", " << (unsigned) seg.getLoad() << ", " << (unsigned) seg.getOutputSlew()
-                                        //          << ", " << key << ", " << _techChar->computeKey(length, load, outSlew) << "\n";                                       
-                                        
-                                        if ( std::abs( (int) seg.getInputCap() - (int) inputCap ) > tolerance || 
-                                             std::abs( (int) seg.getInputSlew() - (int) inputSlew ) > tolerance ) {
-                                                return;
-                                        }
+        bool forceBuffer = false;
+        if (targetOutSlew == 1) {
+                forceBuffer = true;                      
+        }
 
-                                        //std::cout << "[" << length << ", " << load << ", " << outSlew << "] =  "
-                                        //          << (unsigned) seg.getLength() << ", " << (unsigned) seg.getLoad() << ", " << (unsigned) seg.getOutputSlew()
-                                        //          << ", " << key << ", " << _techChar->computeKey(length, load, outSlew) << "\n";                                       
-                                        
+        for (unsigned load = minLoad; load <= maxLoad; ++load) {
+                for (unsigned outSlew = minOutSlew; outSlew <= maxOutSlew; ++outSlew) {
+                        _techChar->forEachWireSegment(length, load, outSlew, 
+                                                      [&] (unsigned key, const WireSegment& seg) {
+                                if (seg.getOutputSlew() > _options->getMaxSlew()) {
+                                       return;
+                                }
 
-                                        if (seg.getDelay() < minDelay) {
-                                                minDelay = seg.getDelay();
-                                                minKey = key;
-                                        }
+                                //if (forceBuffer && !seg.isBuffered()) {
+                                //        return;
+                                //}
 
-                                        if (seg.isBuffered() && seg.getDelay() < minBufDelay) {
-                                                minBufDelay = seg.getDelay();
-                                                minBufKey = key;
-                                        }
-                                });                
+                                _techChar->reportSegment(key);
+                                if (seg.getDelay() < minDelay) {
+                                        minDelaySegKey = key;
+                                        minDelay = seg.getDelay();
+                                        inputCap = seg.getInputCap();
+                                        inputSlew = seg.getInputSlew();
+                                }
+                                ++numWireSegments;
+                        });
                 }
         }
-
-        const unsigned MAX_TOLERANCE = 10;
-        if (inputSlew >= slewThreshold) {
-                if (minBufKey < std::numeric_limits<unsigned>::max()) {
-                        const WireSegment& bestBufSegment = _techChar->getWireSegment(minBufKey);
-                        outputSlew = bestBufSegment.getOutputSlew();
-                        outputCap  = bestBufSegment.getLoad();      
-                        return minBufKey;
-                } else if (tolerance < MAX_TOLERANCE) {
-                        //std::cout << "    Could not find a buffered segment for [" << length << ", " 
-                        //          << inputSlew << ", " << inputCap << "]... ";
-                        //std::cout << "Increasing tolerance\n";
-                        return computeMinDelaySegment(length, inputSlew, inputCap, slewThreshold, 
-                                                      tolerance + 1, outputSlew, outputCap );
-                }
+        
+        if (numWireSegments == 0) {
+                return computeMinDelaySegment(length, targetLoad, targetOutSlew, inputCap, inputSlew, tolerance + 1);
         }
 
-        if (minKey == std::numeric_limits<unsigned>::max()) {
-                //std::cout << "    Could not find segment for [" << length << ", " 
-                //          << inputSlew << ", " << inputCap << "]... ";
-                //std::cout << "Increasing tolerance\n";
-                return computeMinDelaySegment(length, inputSlew, inputCap, slewThreshold, 
-                                              tolerance + 1, outputSlew, outputCap );
+        if (minDelaySegKey == INVALID_KEY) {
+                std::cout << " [ERROR] Invalid key while computing min delay segment.\n";
+                std::exit(1);        
         }
-
-        const WireSegment& bestSegment = _techChar->getWireSegment(minKey);
-        outputSlew = std::max( (unsigned) bestSegment.getOutputSlew(), inputSlew + 1 );
-        outputCap  = bestSegment.getLoad();
-
-        return minKey;
+        
+        std::cout << "    Tolerance: " << tolerance << " ";
+        _techChar->reportSegment(minDelaySegKey);
+        
+        return minDelaySegKey;
 }
 
-void HTreeBuilder::computeBranchingPoints(unsigned level, LevelTopology& topology) {
+
+void HTreeBuilder::computeBranchingPoints(unsigned level) {
+        std::cout << " " << level << "... ";
+        LevelTopology& topology = _topologyForEachLevel[level-1];
+
         if (level == 1) {
                 Point<double> clockRoot(_sinkRegion.computeCenter());
                 unsigned branchPtIdx1 = 

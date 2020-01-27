@@ -98,11 +98,16 @@ protected:
 //-----------------------------------------------------------------------------
 
 class HTreeBuilder : public TreeBuilder {
+protected:
+        const unsigned INVALID_KEY = std::numeric_limits<unsigned>::max();
+        const unsigned DELAY_MAX = std::numeric_limits<unsigned>::max();
+
         class LevelTopology {
         public:
                 static constexpr unsigned NO_PARENT = std::numeric_limits<unsigned>::max();
                 
-                LevelTopology(double length) : _length(length), _outputSlew(0), _outputCap(0) {};
+                LevelTopology() = default;
+                LevelTopology(double length) : _length(length), _inputSlew(0), _inputCap(0) {};
                
                 void addWireSegment(unsigned idx) { _wireSegments.push_back(idx); }
                
@@ -148,15 +153,15 @@ class HTreeBuilder : public TreeBuilder {
                        return _branchSinkLocs[branchIdx];
                 }
 
-                void setOutputSlew(unsigned slew) { _outputSlew = slew; }
-                unsigned getOutputSlew() const { return _outputSlew; }
-                void setOutputCap(unsigned cap) { _outputCap = cap; }
-                unsigned getOutputCap() const { return _outputCap; }
+                void setInputSlew(unsigned slew) { _inputSlew = slew; }
+                unsigned getInputSlew() const { return _inputSlew; }
+                void setInputCap(unsigned cap) { _inputCap = cap; }
+                unsigned getInputCap() const { return _inputCap; }
 
         private:
                 double                         _length;
-                unsigned                       _outputSlew;
-                unsigned                       _outputCap;
+                unsigned                       _inputSlew;
+                unsigned                       _inputCap;
                 std::vector<unsigned>          _wireSegments;
                 std::vector<Point<double>>     _branchPointLoc;
                 std::vector<unsigned>          _parents;
@@ -173,17 +178,17 @@ public:
         void plotSolution();
 private:
         void initSinkRegion();
-        void computeLevelTopology(unsigned level, double width, double height);
+        unsigned computeClockTreeDepth();
+        void computeLevelTopology(unsigned level);
         unsigned computeNumberOfSinksPerSubRegion(unsigned level) const;
         void computeSubRegionSize(unsigned level, double& width, double& height) const;
-        unsigned computeMinDelaySegment(unsigned length) const;
         unsigned computeMinDelaySegment(unsigned length, 
-                                        unsigned inputSlew,
-                                        unsigned inputCap,
-                                        unsigned slewThreshold,
-                                        unsigned tolerance,
-                                        unsigned &outputSlew,
-                                        unsigned &outputCap) const;
+                                        unsigned load, 
+                                        unsigned outSlew,
+                                        unsigned &inputCap, 
+                                        unsigned &inputeSlew,
+                                        unsigned tolerance) const;
+
         void reportWireSegment(unsigned key) const;
         void createClockSubNets();
         void createSingleBufferClockNet();
@@ -197,7 +202,7 @@ private:
         unsigned computeGridSizeX(unsigned level) const { return std::pow(2, (level + 1) / 2); }
         unsigned computeGridSizeY(unsigned level) const { return std::pow(2, level / 2); }
         
-        void computeBranchingPoints(unsigned level, LevelTopology& topology);
+        void computeBranchingPoints(unsigned level);
         void refineBranchingPointsWithClustering(LevelTopology& topology,
                                                  unsigned level,
                                                  unsigned branchPtIdx1,
@@ -227,7 +232,7 @@ protected:
         unsigned _minInputCap         =  1;
         unsigned _numMaxLeafSinks     =  0;
         unsigned _minLengthSinkRegion =  0;
-        unsigned _clockTreeMaxDepth   =  0;
+        unsigned _clockTreeDepth      =  0;
 }; 
 
 }
