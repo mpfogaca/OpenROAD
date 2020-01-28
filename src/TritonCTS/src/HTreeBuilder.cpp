@@ -75,8 +75,9 @@ void HTreeBuilder::run() {
         _minInputCap = _techChar->getActualMinInputCap();
         _numMaxLeafSinks = _options->getNumMaxLeafSinks();
         _minLengthSinkRegion = _techChar->getMinSegmentLength() * 2;
-
+        
         initSinkRegion();
+        initTopology();
         
         for (unsigned level = 1; level <= _clockTreeMaxDepth; ++level) {
                 bool stopCriterionFound = false;
@@ -122,6 +123,91 @@ void HTreeBuilder::run() {
         createClockSubNets();
 
         std::cout << " Clock topology of net \"" << _clock.getName() << "\" done.\n";
+}
+
+void HTreeBuilder::initTopology() {
+        std::cout << " Initializing topology...\n";
+        std::vector<unsigned> _branchingFactors = _options->getBranchingFactors();
+        if (_branchingFactors.size() < 1) {
+        
+        } 
+        _maxLevel = _branchingFactors.size();
+
+        unsigned numSinks = _clock.getNumSinks();
+        double height     = _sinkRegion.getHeight();
+        double width      = _sinkRegion.getWidth();
+        for (unsigned level = 1; level <= _maxLevel; ++level) {
+                LevelTopology topology;
+                
+                unsigned fanout = _branchingFactors[level-1];
+                topology.setBranchingFactor(fanout); 
+
+                numSinks = std::ceil((double) numSinks / fanout);
+                topology.setNumSinks(numSinks);       
+                
+                if (isVertical(level)) {                
+                        height /= fanout;
+                } else {
+                        width  /= fanout;
+                }
+                topology.setHeight(height);
+                topology.setWidth(width);
+
+                unsigned length = computeNearestSegmentLength(width/2.0);
+                if (isVertical(level)) {
+                        length = computeNearestSegmentLength(height/2.0);
+                }
+               
+                topology.createTopologyWire(length);
+
+                _topologyForEachLevel.push_back(topology);
+        }
+        
+        reportTopology();
+
+        if (numSinks > _numMaxLeafSinks) {
+                std::cout << " Number of sinks on the sinks region is too large. Exiting...\n";
+                std::exit(1);
+        }
+}
+
+void HTreeBuilder::reportTopology() const {
+        std::cout << " -----------------------------------\n";
+        std::cout << " " << std::setw(14) << "" << std::setw(7) << "Num " << "\n";
+        std::cout << " "
+                  << std::setw(7) << "Level" 
+                  << std::setw(7) << "Fanout"
+                  << std::setw(7) << "sinks" 
+                  << std::setw(7) << "Width" 
+                  << std::setw(7) << "Height" << "\n";
+        std::cout << " -----------------------------------\n";
+       
+        std::cout << std::setprecision(4); 
+        for (unsigned level = 1; level <= _maxLevel; ++level) {
+                const LevelTopology& topology = _topologyForEachLevel[level-1];
+                std::cout << " "
+                          << std::setw(7) << level 
+                          << std::setw(7) << topology.getBranchingFactor() 
+                          << std::setw(7) << topology.getNumSinks() 
+                          << std::setw(7) << topology.getWidth() 
+                          << std::setw(7) << topology.getHeight() 
+                          << "\n";
+        }
+        std::cout << " -----------------------------------\n";
+}
+
+inline 
+unsigned HTreeBuilder::computeNearestSegmentLength(double length) {
+        unsigned minLength = _minLengthSinkRegion / 2;
+
+        if (minLength > 1 && length < minLength && _options->isFakeLutEntriesEnabled()) {
+                unsigned minIndex = 1;
+                _techChar->createFakeEntries(_minLengthSinkRegion, minIndex);
+                _minLengthSinkRegion = 1;
+        }
+        
+        unsigned segmentLength = std::round((double)length/(minLength))*minLength;
+        return std::max<unsigned>(segmentLength, 1);
 }
 
 inline 

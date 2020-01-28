@@ -43,6 +43,7 @@
 #include "TritonCTSKernel.h"
 
 #include <iostream>
+#include <sstream>
 
 namespace TritonCTS {
 
@@ -80,6 +81,18 @@ void TritonCTSKernel::export_characterization(const char* file) {
 
 void TritonCTSKernel::set_root_buffer(const char* buffer) {
         _options.setRootBuffer(buffer);
+}
+
+void TritonCTSKernel::set_branching_factors(const char* pattern) {
+        std::stringstream ss(pattern);
+        
+        std::vector<unsigned> branchingFactors;
+        unsigned factor = 0;
+        while (ss >> factor) {
+                branchingFactors.push_back(factor);
+        }
+
+        _options.setBranchingFactors(branchingFactors);
 }
 
 }

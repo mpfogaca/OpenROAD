@@ -44,48 +44,54 @@ sta::define_cmd_args "clock_tree_synthesis" {[-lut_file lut] \
                                              [-sol_list slist] \
                                              [-root_buf buf] \
                                              [-wire_unit unit] \
-                                             [-clk_nets nets] \ 
+                                             [-clk_nets nets] \
+                                             [-branch_factors factors] \ 
                                             } 
 
 proc clock_tree_synthesis { args } {
   sta::parse_key_args "clock_tree_synthesis" args \
-    keys {-lut_file -sol_list -root_buf -wire_unit -clk_nets} flags {}
+    keys {-lut_file -sol_list -root_buf -wire_unit -clk_nets -branch_factors} flags {}
 
   set cts [get_triton_cts]
 
   if { [info exists keys(-lut_file)] } {
-        set lut $keys(-lut_file)
+    set lut $keys(-lut_file)
   } else {
-        puts "Missing argument -lut_file"
-        exit
+    puts "Missing argument -lut_file"
+    exit
   }
  
   if { [info exists keys(-sol_list)] } {
-        set sol_list $keys(-sol_list)
+    set sol_list $keys(-sol_list)
   } else {
-        puts "Missing argument -sol_list"
-        exit
+    puts "Missing argument -sol_list"
+    exit
   }
 
   if { [info exists keys(-root_buf)] } {
-        set root_buf $keys(-root_buf)
+    set root_buf $keys(-root_buf)
   } else {
-        puts "Missing argument -root_buf"
-        exit
+    puts "Missing argument -root_buf"
+    exit
   }
 
   if { [info exists keys(-wire_unit)] } {
-        set wire_unit $keys(-wire_unit)
+    set wire_unit $keys(-wire_unit)
   } else {
-        puts "Missing argument -wire_unit"
-        exit
+    puts "Missing argument -wire_unit"
+    exit
   }
 
   if { [info exists keys(-clk_nets)] } {
-        set clk_nets $keys(-clk_nets)
-        $cts set_clock_nets $clk_nets
+    set clk_nets $keys(-clk_nets)
+    $cts set_clock_nets $clk_nets
   }
 
+  if { [info exists keys(-branch_factors)] } {
+    set factors $keys(-branch_factors)
+    $cts set_branching_factors $factors
+  }
+  
   $cts set_lut_file $lut 
   $cts set_sol_list_file $sol_list
   $cts set_wire_segment_distance_unit $wire_unit

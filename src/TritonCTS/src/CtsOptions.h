@@ -46,6 +46,7 @@
 #include "Util.h"
 
 #include <string>
+#include <vector>
 
 namespace TritonCTS {
 
@@ -87,6 +88,9 @@ public:
         bool runPostCtsOpt() { return _runPostCtsOpt; }
         void setBufDistRatio(double ratio) { _bufDistRatio = ratio; }
         double getBufDistRatio() { return _bufDistRatio; }
+        void setBranchingFactors(std::vector<unsigned>& factors) { _branchingFactors = factors; }
+        const std::vector<unsigned>& allBranchingFactors() const { return _branchingFactors; }
+        const std::vector<unsigned>& getBranchingFactors() const { return _branchingFactors; }
                 
 private:
         std::string _blockName               = "";
@@ -106,6 +110,7 @@ private:
         bool        _writeOnlyClockNets      = false;
         bool        _runPostCtsOpt           = true;
         double      _bufDistRatio            = 0.1;
+        std::vector<unsigned> _branchingFactors;
 };
 
 }
