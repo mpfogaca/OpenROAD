@@ -67,9 +67,11 @@ public:
 
   // Insert buffers to fix max cap/slew violations.
   // resizerPreamble() required.
-  void rebufferNets(bool repair_max_cap,
-		    bool repair_max_slew,
-		    LibertyCell *buffer_cell);
+  void repairMaxCapSlew(bool repair_max_cap,
+			bool repair_max_slew,
+			LibertyCell *buffer_cell);
+  void repairMaxFanout(int max_fanout,
+		       LibertyCell *buffer_cell);
   // Rebuffer net (for testing).
   // Assumes buffer_cell->isBuffer() is true.
   // resizerPreamble() required.
@@ -123,9 +125,6 @@ protected:
 				   int steiner_pt);
 
   // Assumes buffer_cell->isBuffer() is true.
-  void rebuffer(bool repair_max_cap,
-		bool repair_max_slew,
-		LibertyCell *buffer_cell);
   void rebuffer(const Pin *drvr_pin,
 		LibertyCell *buffer_cell);
   bool hasMaxCapViolation(const Pin *drvr_pin);
@@ -203,6 +202,12 @@ protected:
 			 // Return value.
 			 InstanceSeq &insts);
   int fanout(Pin *drvr_pin);
+  void bufferLoads(Pin *drvr_pin,
+		   int buffer_count,
+		   int max_fanout,
+		   LibertyCell *buffer_cell);
+  void findLoads(Pin *drvr_pin,
+		 PinSeq &loads);
 
   float wire_res_;
   float wire_cap_;

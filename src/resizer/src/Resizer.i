@@ -213,13 +213,22 @@ resize_to_target_slew()
 }
 
 void
-rebuffer_nets(bool repair_max_cap,
-	      bool repair_max_slew,
-	      LibertyCell *buffer_cell)
+repair_max_slew_cap(bool repair_max_cap,
+		    bool repair_max_slew,
+		    LibertyCell *buffer_cell)
 {
   ensureLinked();
   Resizer *resizer = getResizer();
-  resizer->rebufferNets(repair_max_cap, repair_max_slew, buffer_cell);
+  resizer->repairMaxCapSlew(repair_max_cap, repair_max_slew, buffer_cell);
+}
+
+void
+repair_max_fanout_cmd(int max_fanout,
+		      LibertyCell *buffer_cell)
+{
+  ensureLinked();
+  Resizer *resizer = getResizer();
+  resizer->repairMaxFanout(max_fanout, buffer_cell);
 }
 
 void
@@ -295,7 +304,7 @@ repair_tie_fanout_cmd(LibertyPort *tie_port,
 {
   ensureLinked();
   Resizer *resizer = getResizer();
-  return resizer->repairTieFanout(tie_port, max_fanout, verbose);
+  resizer->repairTieFanout(tie_port, max_fanout, verbose);
 }
 
 %} // inline

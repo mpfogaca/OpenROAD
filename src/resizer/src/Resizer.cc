@@ -42,9 +42,6 @@
 // Outstanding issues
 //  Instance levelization and resizing to target slew only support single output gates
 //  multi-corner support?
-//  tcl cmds to set liberty pin cap and limit for testing
-//  check one def
-//  check lef/liberty library cell ports match
 //  option to place buffers between driver and load on long wires
 //   to fix max slew/cap violations
 // http://vlsicad.eecs.umich.edu/BK/Slots/cache/dropzone.tamu.edu/~zhuoli/GSRC/fast_buffer_insertion.html
@@ -382,7 +379,7 @@ Resizer::resizeToTargetSlew()
     Instance *inst = network_->instance(drvr_pin);
     resizeToTargetSlew(inst);
     if (overMaxArea()) {
-      report_->warn("max utilization reached.\n");
+      report_->warn("Max utilization reached.\n");
       break;
     }
   }
@@ -821,19 +818,6 @@ Resizer::findParasiticNode(SteinerTree *tree,
 
 ////////////////////////////////////////////////////////////////
 
-void
-Resizer::rebufferNets(bool repair_max_cap,
-		      bool repair_max_slew,
-		      LibertyCell *buffer_cell)
-{
-  if (repair_max_cap || repair_max_slew) {
-    rebuffer(repair_max_cap, repair_max_slew, buffer_cell);
-    report_->print("Inserted %d buffers in %d nets.\n",
-		   inserted_buffer_count_,
-		   rebuffer_net_count_);
-  }
-}
-
 class RebufferOption
 {
 public:
@@ -845,6 +829,11 @@ public:
 		 RebufferOption *ref,
 		 RebufferOption *ref2);
   ~RebufferOption();
+  void print(int level,
+	     Resizer *resizer);
+  void printTree(Resizer *resizer);
+  void printTree(int level,
+		 Resizer *resizer);
   RebufferOptionType type() const { return type_; }
   float cap() const { return cap_; }
   Required required() const { return required_; }
@@ -886,6 +875,71 @@ RebufferOption::~RebufferOption()
 {
 }
 
+void
+RebufferOption::printTree(Resizer *resizer)
+{
+  printTree(0, resizer);
+}
+
+void
+RebufferOption::printTree(int level,
+			  Resizer *resizer)
+{
+  print(level, resizer);
+  switch (type_) {
+  case RebufferOptionType::sink:
+    break;
+  case RebufferOptionType::buffer:
+  case RebufferOptionType::wire:
+    ref_->printTree(level + 1, resizer);
+    break;
+  case RebufferOptionType::junction:
+    ref_->printTree(level + 1, resizer);
+    ref2_->printTree(level + 1, resizer);
+    break;
+  }
+}
+
+void
+RebufferOption::print(int level,
+		      Resizer *resizer)
+{
+  Report *report = resizer->report();
+  Network *sdc_network = resizer->sdcNetwork();
+  Units *units = resizer->units();
+  switch (type_) {
+  case RebufferOptionType::sink:
+    // %*s format indents level spaces.
+    report->print("%*sload %s cap %s req %s\n",
+		   level, "",
+		   sdc_network->pathName(load_pin_),
+		   units->capacitanceUnit()->asString(cap_),
+		   delayAsString(required_, resizer));
+    break;
+  case RebufferOptionType::wire:
+    report->print("%*swire cap %s req %s\n",
+		level, "",
+		units->capacitanceUnit()->asString(cap_),
+		delayAsString(required_, resizer));
+    break;
+  case RebufferOptionType::buffer:
+    report->print("%*sbuffer cap %s req %s\n",
+		  level, "",
+		  units->capacitanceUnit()->asString(cap_),
+		  delayAsString(required_, resizer));
+
+    break;
+  case RebufferOptionType::junction:
+    report->print("%*sjunction cap %s req %s\n",
+		  level, "",
+		  units->capacitanceUnit()->asString(cap_),
+		  delayAsString(required_, resizer));
+
+    break;
+  }
+}
+
+// Required time at input of buffer_cell driving this option.
 Required
 RebufferOption::bufferRequired(LibertyCell *buffer_cell,
 			       Resizer *resizer) const
@@ -918,12 +972,15 @@ Resizer::deleteRebufferOptions()
 ////////////////////////////////////////////////////////////////
 
 void
-Resizer::rebuffer(bool repair_max_cap,
-		  bool repair_max_slew,
-		  LibertyCell *buffer_cell)
+Resizer::repairMaxCapSlew(bool repair_max_cap,
+			  bool repair_max_slew,
+			  LibertyCell *buffer_cell)
 {
   inserted_buffer_count_ = 0;
   rebuffer_net_count_ = 0;
+  int max_cap_violation_count = 0;
+  int max_slew_violation_count = 0;
+
   sta_->findDelays();
   // Rebuffer in reverse level order.
   for (int i = level_drvr_verticies_.size() - 1; i >= 0; i--) {
@@ -931,10 +988,18 @@ Resizer::rebuffer(bool repair_max_cap,
     // Hands off the clock tree.
     if (!search_->isClock(vertex)) {
       Pin *drvr_pin = vertex->pin();
-      if ((repair_max_cap
-	   && hasMaxCapViolation(drvr_pin))
-	  || (repair_max_slew
-	      && hasMaxSlewViolation(drvr_pin))) {
+      bool violation = false;
+      if (repair_max_cap
+	  && hasMaxCapViolation(drvr_pin)) {
+	max_cap_violation_count++;
+	violation = true;
+      }
+      if (repair_max_slew
+	  && hasMaxSlewViolation(drvr_pin)) {
+	max_slew_violation_count++;
+	violation = true;
+      }
+      if (violation) {
 	rebuffer(drvr_pin, buffer_cell);
 	if (overMaxArea()) {
 	  report_->warn("max utilization reached.\n");
@@ -943,6 +1008,15 @@ Resizer::rebuffer(bool repair_max_cap,
       }
     }
   }
+  
+  if (max_cap_violation_count > 0)
+    report_->print("Found %d max capacitance violations.\n", max_cap_violation_count);
+  if (max_slew_violation_count > 0)
+    report_->print("Found %d max slew violations.\n", max_slew_violation_count);
+  if (inserted_buffer_count_ > 0)
+    report_->print("Inserted %d buffers in %d nets.\n",
+		   inserted_buffer_count_,
+		   rebuffer_net_count_);
 }
 
 bool
@@ -1081,18 +1155,25 @@ Resizer::rebuffer(const Pin *drvr_pin,
 	RebufferOptionSeq Z = rebufferBottomUp(tree, tree->left(drvr_pt),
 					       drvr_pt,
 					       1, buffer_cell);
-	Required Tbest = -INF;
-	RebufferOption *best = nullptr;
+	Required best_req = -INF;
+	RebufferOption *best_option = nullptr;
 	for (auto p : Z) {
-	  Required Tb = p->required() - gateDelay(drvr_port, p->cap());
-	  if (fuzzyGreater(Tb, Tbest)) {
-	    Tbest = Tb;
-	    best = p;
+	  // Find required for drvr_pin into option.
+	  Delay gate_delay = gateDelay(drvr_port, p->cap());
+	  Required req = p->required() - gate_delay;
+	  debugPrint4(debug_, "rebuffer", 3, "option req %s - %s = %s cap %s\n",
+		      delayAsString(p->required(), this),
+		      delayAsString(gate_delay, this),
+		      delayAsString(req, this),
+		      units_->capacitanceUnit()->asString(p->cap()));
+	  if (fuzzyGreater(req, best_req)) {
+	    best_req = req;
+	    best_option = p;
 	  }
 	}
-	if (best) {
+	if (best_option) {
 	  int before = inserted_buffer_count_;
-	  rebufferTopDown(best, net, 1, buffer_cell);
+	  rebufferTopDown(best_option, net, 1, buffer_cell);
 	  if (inserted_buffer_count_ != before)
 	    rebuffer_net_count_++;
 	}
@@ -1167,12 +1248,8 @@ Resizer::rebufferBottomUp(SteinerTree *tree,
 					     pin,
 					     tree->location(k),
 					     nullptr, nullptr);
-      // %*s format indents level spaces.
-      debugPrint5(debug_, "rebuffer", 3, "%*sload %s cap %s req %s\n",
-		  level, "",
-		  sdc_network_->pathName(pin),
-		  units_->capacitanceUnit()->asString(z->cap()),
-		  delayAsString(z->required(), this));
+      if (debug_->check("rebuffer", 3))
+	z->print(level, this);
       RebufferOptionSeq Z;
       Z.push_back(z);
       return addWireAndBuffer(Z, tree, k, prev, level, buffer_cell);
@@ -1203,25 +1280,21 @@ Resizer::rebufferBottomUp(SteinerTree *tree,
       int si = 0;
       for (size_t pi = 0; pi < Z.size(); pi++) {
 	auto p = Z[pi];
-	if (p) {
-	  float Lp = p->cap();
-	  // Remove options by shifting down with index si.
-	  si = pi + 1;
-	  // Because the options are sorted we don't have to look
-	  // beyond the first option.
-	  for (size_t qi = pi + 1; qi < Z.size(); qi++) {
-	    auto q = Z[qi];
-	    if (q) {
-	      float Lq = q->cap();
-	      // We know Tq <= Tp from the sort so we don't need to check req.
-	      // If q is the same or worse than p, remove solution q.
-	      if (fuzzyLess(Lq, Lp))
-		// Copy survivor down.
-		Z[si++] = q;
-	    }
-	  }
-	  Z.resize(si);
+	float Lp = p->cap();
+	// Remove options by shifting down with index si.
+	si = pi + 1;
+	// Because the options are sorted we don't have to look
+	// beyond the first option.
+	for (size_t qi = pi + 1; qi < Z.size(); qi++) {
+	  auto q = Z[qi];
+	  float Lq = q->cap();
+	  // We know Tq <= Tp from the sort so we don't need to check req.
+	  // If q is the same or worse than p, remove solution q.
+	  if (fuzzyLess(Lq, Lp))
+	    // Copy survivor down.
+	    Z[si++] = q;
 	}
+	Z.resize(si);
       }
       return addWireAndBuffer(Z, tree, k, prev, level, buffer_cell);
     }
@@ -1238,7 +1311,7 @@ Resizer::addWireAndBuffer(RebufferOptionSeq Z,
 			  LibertyCell *buffer_cell)
 {
   RebufferOptionSeq Z1;
-  Required best = -INF;
+  Required best_req = -INF;
   RebufferOption *best_ref = nullptr;
   adsPoint k_loc = tree->location(k);
   adsPoint prev_loc = tree->location(prev);
@@ -1257,38 +1330,40 @@ Resizer::addWireAndBuffer(RebufferOptionSeq Z,
 					   nullptr,
 					   prev_loc,
 					   p, nullptr);
-    debugPrint7(debug_, "rebuffer", 3, "%*swire %s -> %s wl %d cap %s req %s\n",
-		level, "",
-		tree->name(prev, sdc_network_),
-		tree->name(k, sdc_network_),
-		wire_length_dbu,
-		units_->capacitanceUnit()->asString(z->cap()),
-		delayAsString(z->required(), this));
+    if (debug_->check("rebuffer", 3)) {
+      report_->print("%*swire %s -> %s wl %d\n",
+		     level, "",
+		     tree->name(prev, sdc_network_),
+		     tree->name(k, sdc_network_),
+		     wire_length_dbu);
+      z->print(level, this);
+    }
     Z1.push_back(z);
     // We could add options of different buffer drive strengths here
     // Which would have different delay Dbuf and input cap Lbuf
     // for simplicity we only consider one size of buffer.
-    Required rt = z->bufferRequired(buffer_cell, this);
-    if (fuzzyGreater(rt, best)) {
-      best = rt;
+    Required req = z->bufferRequired(buffer_cell, this);
+    if (fuzzyGreater(req, best_req)) {
+      best_req = req;
       best_ref = p;
     }
   }
   if (best_ref) {
     RebufferOption *z = makeRebufferOption(RebufferOptionType::buffer,
 					   bufferInputCapacitance(buffer_cell),
-					   best,
+					   best_req,
 					   nullptr,
 					   // Locate buffer at opposite end of wire.
 					   prev_loc,
 					   best_ref, nullptr);
-    debugPrint7(debug_, "rebuffer", 3, "%*sbuffer %s cap %s req %s -> cap %s req %s\n",
-		level, "",
-		tree->name(prev, sdc_network_),
-		units_->capacitanceUnit()->asString(best_ref->cap()),
-		delayAsString(best_ref->required(), this),
-		units_->capacitanceUnit()->asString(z->cap()),
-		delayAsString(z->required(), this));
+    if (debug_->check("rebuffer", 3)) {
+      report_->print("%*sbuffer %s cap %s req %s ->\n",
+		     level, "",
+		     tree->name(prev, sdc_network_),
+		     units_->capacitanceUnit()->asString(best_ref->cap()),
+		     delayAsString(best_ref->required(), this));
+      z->print(level, this);
+    }
     Z1.push_back(z);
   }
   return Z1;
@@ -1355,6 +1430,96 @@ Resizer::rebufferTopDown(RebufferOption *choice,
   }
   }
 }
+
+////////////////////////////////////////////////////////////////
+
+void
+Resizer::repairMaxFanout(int max_fanout,
+			 LibertyCell *buffer_cell)
+{
+  int max_fanout_violation_count = 0;
+  inserted_buffer_count_ = 0;
+
+  init();
+  sta_->findDelays();
+  // Rebuffer in reverse level order.
+  for (int i = level_drvr_verticies_.size() - 1; i >= 0; i--) {
+    Vertex *vertex = level_drvr_verticies_[i];
+    Pin *drvr_pin = vertex->pin();
+    // Hands off the clock tree.
+    if (!network_->isTopLevelPort(drvr_pin)
+	&& !search_->isClock(vertex)) {
+      int fanout = this->fanout(drvr_pin);
+      if (fanout > max_fanout) {
+	max_fanout_violation_count++;
+	int buffer_count = ceil(fanout / static_cast<double>(max_fanout));
+	bufferLoads(drvr_pin, buffer_count, max_fanout, buffer_cell);
+	if (overMaxArea()) {
+	  report_->warn("max utilization reached.\n");
+	  break;
+	}
+      }
+    }
+  }
+
+  if (max_fanout_violation_count > 0)
+    report_->print("Found %d max fanout violations.\n", max_fanout_violation_count);
+  if (inserted_buffer_count_ > 0)
+    report_->print("Inserted %d buffers.\n",
+		   inserted_buffer_count_);
+}
+
+void
+Resizer::bufferLoads(Pin *drvr_pin,
+		     int buffer_count,
+		     int max_fanout,
+		     LibertyCell *buffer_cell)
+{
+  PinSeq loads;
+  findLoads(drvr_pin, loads);
+  // group loads by location
+  PinSeq::Iterator load_iter(loads);
+  Vector<Instance*> buffers(buffer_count);
+  Net *net = network_->net(drvr_pin);
+  Instance *parent = db_network_->topInstance();
+  LibertyPort *buffer_in, *buffer_out;
+  buffer_cell->bufferPorts(buffer_in, buffer_out);
+  for (int i = 0; i < buffer_count; i++) {
+    string buffer_out_net_name = makeUniqueNetName();
+    Net *buffer_out_net = db_network_->makeNet(buffer_out_net_name.c_str(), parent);
+    string buffer_name = makeUniqueBufferName();
+    Instance *buffer = db_network_->makeInstance(buffer_cell,
+						 buffer_name.c_str(),
+						 parent);
+    inserted_buffer_count_++;
+    design_area_ += area(db_network_->cell(buffer_cell));
+
+    sta_->connectPin(buffer, buffer_in, net);
+    sta_->connectPin(buffer, buffer_out, buffer_out_net);
+    int l = 0;
+    while (load_iter.hasNext()
+	   && l < max_fanout) {
+      Pin *load = load_iter.next();
+      Instance *load_inst = network_->instance(load);
+      Port *load_port = network_->port(load);
+      sta_->disconnectPin(load);
+      sta_->connectPin(load_inst, load_port, buffer_out_net);
+      l++;
+    }
+  }
+}
+
+void
+Resizer::findLoads(Pin *drvr_pin,
+		   PinSeq &loads)
+{
+  PinSeq drvrs;
+  PinSet visited_drvrs;
+  FindNetDrvrLoads visitor(drvr_pin, visited_drvrs, loads, drvrs, network_);
+  network_->visitConnectedPins(drvr_pin, visitor);
+}
+
+////////////////////////////////////////////////////////////////
 
 string
 Resizer::makeUniqueNetName()
@@ -1721,11 +1886,11 @@ Resizer::repairHoldResize(Pin *drvr_pin,
       if (rc_delay - rc_delay0 > -hold_slack
 	  // Last chance baby.
 	  || k == 0) {
-	printf("%s %s -> %s +%s\n",
-	       sdc_network_->pathName(inst),
-	       inst_cell->name(),
-	       equiv->name(),
-	       delayAsString(rc_delay - rc_delay0, this));
+	debugPrint4(debug_, "resizer", 3, "%s %s -> %s +%s\n",
+		    sdc_network_->pathName(inst),
+		    inst_cell->name(),
+		    equiv->name(),
+		    delayAsString(rc_delay - rc_delay0, this));
 	sta_->replaceCell(inst, equiv);
 	break;
       }
