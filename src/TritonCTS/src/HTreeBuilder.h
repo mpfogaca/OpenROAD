@@ -100,9 +100,18 @@ protected:
 class TopologyWire {
 public:
         TopologyWire(unsigned length) : _length(length) {};
-
+        
+        void addCharWire(unsigned key) { _charWires.push_back(key); }
+        unsigned getLength() const { return _length; }
+        void setLength(unsigned length) { _length = length; }
+        unsigned getOutputSlew() const { return _outputSlew; }
+        void setOutputSlew(unsigned slew) { _outputSlew = slew; }
+        unsigned getOutputCap() const { return _outputCap; }
+        void setOutputCap(unsigned cap) { _outputCap = cap; }
 protected:
-        unsigned _length;        
+        unsigned _length;
+        unsigned _outputSlew;
+        unsigned _outputCap;        
         std::vector<unsigned> _charWires;
 };
 
@@ -110,6 +119,7 @@ protected:
 
 class LevelTopology {
 public:
+        enum Direction : uint8_t {HORIZONTAL, VERTICAL};
         static constexpr unsigned NO_PARENT = std::numeric_limits<unsigned>::max();
         
         LevelTopology() = default;        
@@ -173,9 +183,41 @@ public:
         unsigned getNumSinks() const { return _numSinks; }
         void setBranchingFactor(unsigned factor) { _branchingFactor = factor; }
         unsigned getBranchingFactor() const { return _branchingFactor; }
+        void setDirection(Direction dir) { _direction = dir; }
+        bool isVertical() const { return _direction == VERTICAL; } 
 
         void createTopologyWire(unsigned length) { _topologyWires.push_back(length); }
+        TopologyWire& getFirstWire() { return _topologyWires[0]; }
+        void forEachTopologyWire(const std::function<void(TopologyWire&)>& func) {
+                for (TopologyWire& wire: _topologyWires) {
+                        func(wire);
+                } 
+        }
+        
+        unsigned addBranchLocation(Point<double> loc) { 
+                _branchLocs.push_back(loc); 
+                unsigned numBranches = _branchLocs.size();
+                unsigned idx = numBranches - 1;
+                _branchSinkLocs.resize(numBranches);
+                _parentBranchIdx.resize(numBranches);
+                return idx;
+        }
 
+        void setBranchLocation(unsigned idx, Point<double> loc) { _branchLocs[idx] = loc; } 
+        Point<double> getBranchLocation(unsigned idx) const { return _branchLocs[idx]; }
+        void setParentBranchIdx(unsigned idx, unsigned parent) { _parentBranchIdx[idx] = parent; }
+        unsigned getParentBranchIdx(unsigned idx) const { return _parentBranchIdx[idx]; }
+        void addUpstreamBranchIdx(unsigned idx) { _upstreamBranchIdx.push_back(idx); }
+        unsigned getUpstreamBranchIdx(unsigned idx) const { return _upstreamBranchIdx[idx]; }        
+        void computeBranchLocations(LevelTopology* parentTopology);
+        void refineBranchLocations(unsigned parentIdx,
+                                   const std::vector<Point<double>>& sinkLocs,
+                                   const Point<double> rootLoc);
+        void forEachBranchLocation(std::function<void(unsigned, Point<double>)> func) const {
+                for (unsigned idx = 0; idx < _branchLocs.size(); ++idx) {
+                        func(idx, _branchLocs[idx]);
+                }
+        }
 private:
         double                         _length;
         unsigned                       _outputSlew;
@@ -186,11 +228,15 @@ private:
         std::vector<Clock::SubNet*>    _branchDrivingSubNet;
         std::vector<std::vector<Point<double>>> _branchSinkLocs;
 
-        double   _width;
-        double   _height;
-        unsigned _numSinks;
-        unsigned _branchingFactor;
-        std::vector<TopologyWire> _topologyWires;
+        double    _width;
+        double    _height;
+        unsigned  _numSinks;
+        unsigned  _branchingFactor;
+        Direction _direction;
+        std::vector<Point<double>> _branchLocs;
+        std::vector<unsigned>      _upstreamBranchIdx;
+        std::vector<unsigned>      _parentBranchIdx;
+        std::vector<TopologyWire>  _topologyWires;
 };
 
 //-----------------------------------------------------------------------------
@@ -208,6 +254,9 @@ private:
         void initTopology();
         void reportTopology() const;
         unsigned computeNearestSegmentLength(double length);
+        void computeCharWires();
+        void computeCharWire(TopologyWire& wire, unsigned inputCap, unsigned inputSlew);
+        void computeBranchLocations();
 
         void computeLevelTopology(unsigned level, double width, double height);
         unsigned computeNumberOfSinksPerSubRegion(unsigned level) const;

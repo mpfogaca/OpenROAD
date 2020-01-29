@@ -78,7 +78,10 @@ void HTreeBuilder::run() {
         
         initSinkRegion();
         initTopology();
-        
+        computeCharWires();
+        computeBranchLocations();
+        plotSolution();
+        return; 
         for (unsigned level = 1; level <= _clockTreeMaxDepth; ++level) {
                 bool stopCriterionFound = false;
 
@@ -145,9 +148,11 @@ void HTreeBuilder::initTopology() {
                 numSinks = std::ceil((double) numSinks / fanout);
                 topology.setNumSinks(numSinks);       
                 
-                if (isVertical(level)) {                
+                if (isVertical(level)) {
+                        topology.setDirection(LevelTopology::VERTICAL);                
                         height /= fanout;
                 } else {
+                        topology.setDirection(LevelTopology::HORIZONTAL);                
                         width  /= fanout;
                 }
                 topology.setHeight(height);
@@ -157,8 +162,16 @@ void HTreeBuilder::initTopology() {
                 if (isVertical(level)) {
                         length = computeNearestSegmentLength(height/2.0);
                 }
-               
                 topology.createTopologyWire(length);
+
+                for (unsigned wire = 1; wire < fanout/2; ++wire) {
+                        unsigned length = computeNearestSegmentLength(width);
+                        if (isVertical(level)) {
+                                length = computeNearestSegmentLength(height);
+                        }
+                
+                        topology.createTopologyWire(length);
+                };
 
                 _topologyForEachLevel.push_back(topology);
         }
@@ -208,6 +221,143 @@ unsigned HTreeBuilder::computeNearestSegmentLength(double length) {
         
         unsigned segmentLength = std::round((double)length/(minLength))*minLength;
         return std::max<unsigned>(segmentLength, 1);
+}
+
+void HTreeBuilder::computeCharWires() {
+        TopologyWire dummyRootWire(0);
+        dummyRootWire.setOutputCap(_minInputCap);
+        dummyRootWire.setOutputSlew(1);
+
+        TopologyWire *prevWire = &dummyRootWire;
+        for (unsigned level = 1; level <= _maxLevel; ++level) {
+                LevelTopology& topology = _topologyForEachLevel[level-1];
+                std::cout << " Level: " << level << "\n";
+                topology.forEachTopologyWire( [&] (TopologyWire& wire) {
+                        computeCharWire(wire, 
+                                        prevWire->getOutputCap(), 
+                                        prevWire->getOutputSlew());
+                        prevWire = &wire;                                    
+                });                                
+        }
+}
+
+void HTreeBuilder::computeCharWire(TopologyWire& wire, unsigned inputCap, unsigned inputSlew) {
+        const unsigned SLEW_THRESHOLD = _options->getMaxSlew();
+        const unsigned INIT_TOLERANCE = 1;
+
+        unsigned segmentLength = wire.getLength();
+        
+        unsigned currLength = 0;
+        for (unsigned charSegLength = _techChar->getMaxSegmentLength(); charSegLength >= 1; --charSegLength) {
+                unsigned numWires = (segmentLength - currLength) / charSegLength;
+                
+                if (numWires < 1) {
+                        continue;
+                }
+
+                currLength += numWires * charSegLength;
+                for (unsigned wireCount = 0; wireCount < numWires; ++wireCount) {
+                        unsigned outCap = 0, outSlew = 0;
+                        unsigned key = computeMinDelaySegment(charSegLength, inputSlew, inputCap, 
+                                                              SLEW_THRESHOLD, INIT_TOLERANCE, outSlew, outCap);
+                        
+                        _techChar->reportSegment(key);
+
+                        inputCap = std::max(outCap, _minInputCap);
+                        inputSlew = outSlew;
+                        wire.addCharWire(key); 
+                }
+
+                if (currLength == segmentLength) {
+                        break;
+                }
+        }
+        
+        wire.setOutputCap(inputCap);
+        wire.setOutputSlew(inputSlew);
+}
+
+void HTreeBuilder::computeBranchLocations() {
+        LevelTopology dummyRootTopology;
+        dummyRootTopology.addBranchLocation(_sinkRegion.computeCenter());
+        _clock.forEachSink( [&] (const ClockInst& sink) {
+                dummyRootTopology.addSinkToBranch( 0, Point<double>((float) sink.getX() / _wireSegmentUnit, 
+                                                                    (float) sink.getY() / _wireSegmentUnit));
+        });
+
+        LevelTopology* parentTopology = &dummyRootTopology;
+        for (unsigned level = 1; level <= _maxLevel; ++level) {
+                LevelTopology& topology = _topologyForEachLevel[level-1];
+                topology.computeBranchLocations(parentTopology);
+                parentTopology = &topology;
+                //break;
+        }
+}
+
+void LevelTopology::computeBranchLocations(LevelTopology* parentTopology) {
+        parentTopology->forEachBranchLocation([&] (unsigned idx, Point<double> loc) {
+                Point<double> lowerLoc = loc;
+                Point<double> upperLoc = loc;
+                unsigned prevLowerBranch = NO_PARENT;
+                unsigned prevUpperBranch = NO_PARENT;
+                forEachTopologyWire([&] (TopologyWire& wire) {
+                        if (isVertical()) {
+                                lowerLoc.setY(lowerLoc.getY() - wire.getLength());                        
+                                upperLoc.setY(upperLoc.getY() + wire.getLength());                        
+                        } else {
+                                lowerLoc.setX(lowerLoc.getX() - wire.getLength());                        
+                                upperLoc.setX(upperLoc.getX() + wire.getLength());                        
+                        }
+                        unsigned lowerIdx = addBranchLocation(lowerLoc);       
+                        addUpstreamBranchIdx(idx);
+                        setParentBranchIdx(lowerIdx, prevLowerBranch);
+                        prevLowerBranch = lowerIdx;
+
+                        unsigned upperIdx = addBranchLocation(upperLoc);       
+                        addUpstreamBranchIdx(idx);
+                        setParentBranchIdx(upperIdx, prevUpperBranch);
+                        prevUpperBranch = upperIdx;
+                });
+
+                refineBranchLocations(idx, parentTopology->getBranchSinksLocations(idx), loc);
+        });
+}       
+
+void LevelTopology::refineBranchLocations(unsigned parentIdx,
+                                          const std::vector<Point<double>>& sinkLocs,
+                                          const Point<double> rootLoc) {
+        std::vector<std::pair<float,float>> points;
+        for (unsigned sink = 0; sink < sinkLocs.size(); ++sink) {
+                points.emplace_back(sinkLocs[sink].getX(), sinkLocs[sink].getY());
+        }
+        
+        CKMeans::clustering ckmeans(points, rootLoc.getX(), rootLoc.getY());
+
+        std::vector<std::pair<float, float>> means;
+        std::map<unsigned, unsigned> meanToBranchIdx;
+        forEachBranchLocation([&] (unsigned idx, Point<double> loc) {
+                if (getUpstreamBranchIdx(idx) == parentIdx) {
+                        means.emplace_back(loc.getX(), loc.getY());
+                        meanToBranchIdx[means.size()-1] = idx;
+                }
+        });
+        
+        ckmeans.iterKmeans(1, means.size(), points.size()/means.size(), 0, means, 5);
+
+        std::vector<std::vector<unsigned>> clusters;
+        ckmeans.getClusters(clusters);
+
+        for (unsigned clusterIdx = 0; clusterIdx < clusters.size(); ++clusterIdx) {
+                unsigned branchIdx = meanToBranchIdx.at(clusterIdx);
+                Point<double> newLocation(means[clusterIdx].first, means[clusterIdx].second);
+                setBranchLocation(branchIdx, newLocation);
+
+                for (unsigned elementIdx = 0; elementIdx < clusters[clusterIdx].size(); ++elementIdx) {
+                        unsigned sinkIdx = clusters[clusterIdx][elementIdx];
+                        Point<double> sinkLoc(points[sinkIdx].first, points[sinkIdx].second);
+                        addSinkToBranch(branchIdx, sinkLoc);
+                }   
+        }
 }
 
 inline 
@@ -613,27 +763,40 @@ void HTreeBuilder::plotSolution() {
 
         LevelTopology &topLevelTopology = _topologyForEachLevel.front();
         Point<double> topLevelBufferLoc = _sinkRegion.computeCenter();
-        topLevelTopology.forEachBranchingPoint( [&] (unsigned idx, Point<double> branchPoint) {
-                if (topLevelBufferLoc.getX() < branchPoint.getX()) {
+        topLevelTopology.forEachBranchLocation( [&] (unsigned idx, Point<double> branchPoint) {
+                Point<double> parentLoc = topLevelBufferLoc;
+                unsigned parentIdx = topLevelTopology.getParentBranchIdx(idx);
+                if (parentIdx != LevelTopology::NO_PARENT) {
+                        parentLoc = topLevelTopology.getBranchLocation(parentIdx);
+                }                
+                        
+                if (parentLoc.getX() < branchPoint.getX()) {
                         file << "plt.plot([" 
-                             << topLevelBufferLoc.getX() << ", " 
+                             << parentLoc.getX() << ", " 
                              << branchPoint.getX() << "], ["
-                             << topLevelBufferLoc.getY() << ", " 
+                             << parentLoc.getY() << ", " 
                              << branchPoint.getY() << "], c = 'r')\n";
                 } else {
                         file << "plt.plot([" 
                              << branchPoint.getX() << ", " 
-                             << topLevelBufferLoc.getX() << "], ["
+                             << parentLoc.getX() << "], ["
                              << branchPoint.getY() << ", " 
-                             << topLevelBufferLoc.getY() << "], c = 'r')\n";
+                             << parentLoc.getY() << "], c = 'r')\n";
                 }
         });        
-
+       
         for (unsigned levelIdx = 1; levelIdx < _topologyForEachLevel.size(); ++levelIdx) {
                 const LevelTopology& topology  = _topologyForEachLevel[levelIdx];
-                topology.forEachBranchingPoint( [&] (unsigned idx, Point<double> branchPoint) {
-                        unsigned parentIdx = topology.getBranchingPointParentIdx(idx);
-                        Point<double> parentPoint = _topologyForEachLevel[levelIdx - 1].getBranchingPoint(parentIdx);
+                topology.forEachBranchLocation( [&] (unsigned idx, Point<double> branchPoint) {
+                        unsigned parentIdx = topology.getParentBranchIdx(idx);
+                        Point<double> parentPoint(0, 0);
+                        if (parentIdx != LevelTopology::NO_PARENT) {
+                                parentPoint = topology.getBranchLocation(parentIdx);
+                        } else {
+                                unsigned upstreamBranchIdx = topology.getUpstreamBranchIdx(idx);
+                                parentPoint = _topologyForEachLevel[levelIdx - 1].getBranchLocation(upstreamBranchIdx);
+                        }
+
                         std::string color = "orange";
                         if (levelIdx % 2 == 0) {
                                 color = "red";
@@ -655,7 +818,7 @@ void HTreeBuilder::plotSolution() {
                                                 
                 });
         }
-
+        
         file << "plt.show()\n";
         file.close();
 }
