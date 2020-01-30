@@ -124,36 +124,9 @@ public:
         static constexpr unsigned NO_PARENT = std::numeric_limits<unsigned>::max();
         
         LevelTopology() = default;        
-        LevelTopology(double length) : _length(length), _outputSlew(0), _outputCap(0) {};
                
-        void addWireSegment(unsigned idx) { _wireSegments.push_back(idx); }
-               
-        unsigned addBranchingPoint(const Point<double>& loc, unsigned parent) { 
-                _branchPointLoc.push_back(loc);
-                _parents.push_back(parent);
-                _branchSinkLocs.resize(_branchPointLoc.size());
-                _branchDrivingSubNet.resize(_branchPointLoc.size(), nullptr);
-                return _branchPointLoc.size() - 1;
-        }
-
         void addSinkToBranch(unsigned branchIdx, const Point<double>& sinkLoc) {
                 _branchSinkLocs[branchIdx].push_back(sinkLoc);                        
-        }
- 
-        Point<double>& getBranchingPoint(unsigned idx) { 
-                return _branchPointLoc[idx]; 
-        }
- 
-        unsigned getBranchingPointParentIdx(unsigned idx) const {
-                return _parents[idx];
-        }
- 
-        double getLength() const { return _length; } 
- 
-        void forEachBranchingPoint(std::function<void(unsigned, Point<double>)> func) const {
-                for (unsigned idx = 0; idx < _branchPointLoc.size(); ++idx) {
-                        func(idx, _branchPointLoc[idx]);
-                }
         }
  
         Clock::SubNet* getBranchDrivingSubNet(unsigned idx) const { 
@@ -163,19 +136,11 @@ public:
         void setBranchDrivingSubNet(unsigned idx, Clock::SubNet& subNet) {
                 _branchDrivingSubNet[idx] = &subNet;
         }
- 
-        const std::vector<unsigned>& getWireSegments() const { return _wireSegments; }
         
         const std::vector<Point<double>>& getBranchSinksLocations(unsigned branchIdx) const {
                return _branchSinkLocs[branchIdx];
         }
  
-        void setOutputSlew(unsigned slew) { _outputSlew = slew; }
-        unsigned getOutputSlew() const { return _outputSlew; }
-        void setOutputCap(unsigned cap) { _outputCap = cap; }
-        unsigned getOutputCap() const { return _outputCap; }
-
-
         void setWidth(double width) { _width = width; }
         double getWidth() const { return _width; }
         void setHeight(double height) { _height = height; }
@@ -234,13 +199,6 @@ public:
                 }
         }
 private:
-        double                         _length;
-        unsigned                       _outputSlew;
-        unsigned                       _outputCap;
-        std::vector<unsigned>          _wireSegments;
-        std::vector<Point<double>>     _branchPointLoc;
-        std::vector<unsigned>          _parents;
-
         double    _width;
         double    _height;
         unsigned  _numSinks;
@@ -274,10 +232,6 @@ private:
         void computeCharWire(TopologyWire& wire, unsigned inputCap, unsigned inputSlew);
         void computeBranchLocations();
 
-        void computeLevelTopology(unsigned level, double width, double height);
-        unsigned computeNumberOfSinksPerSubRegion(unsigned level) const;
-        void computeSubRegionSize(unsigned level, double& width, double& height) const;
-        unsigned computeMinDelaySegment(unsigned length) const;
         unsigned computeMinDelaySegment(unsigned length, 
                                         unsigned inputSlew,
                                         unsigned inputCap,
@@ -294,31 +248,6 @@ private:
         
         bool isVertical(unsigned level) const { return level % 2 == 0; }
         bool isHorizontal(unsigned level) const { return !isVertical(level); }
-
-        unsigned computeGridSizeX(unsigned level) const { return std::pow(2, (level + 1) / 2); }
-        unsigned computeGridSizeY(unsigned level) const { return std::pow(2, level / 2); }
-        
-        void computeBranchingPoints(unsigned level, LevelTopology& topology);
-        void refineBranchingPointsWithClustering(LevelTopology& topology,
-                                                 unsigned level,
-                                                 unsigned branchPtIdx1,
-                                                 unsigned branchPtIdx2, 
-                                                 const Point<double>& rootLocation,
-                                                 const std::vector<std::pair<float, float>>& topLevelSinks );
-        
-        bool isSubRegionTooSmall(double width, double height) const {
-                if (width < _minLengthSinkRegion || height < _minLengthSinkRegion ) {
-                        return true;
-                }
-                return false;       
-        }
-
-        bool isNumberOfSinksTooSmall(unsigned numSinksPerSubRegion) const {
-                if (numSinksPerSubRegion < _numMaxLeafSinks) {
-                        return true;
-                }
-                return false;
-        }
 
 protected:
         Box<double>                _sinkRegion;
