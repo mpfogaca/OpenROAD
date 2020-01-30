@@ -3,7 +3,10 @@ Notice 0:     Created 22 technology layers
 Notice 0:     Created 27 technology vias
 Notice 0:     Created 134 library cells
 Notice 0: Finished LEF file:  Nangate.lef
-Inserted 9 tie LOGIC1_X1 instances for 1 nets.
+Notice 0: Reading LEF file:  repair_tie_fanout3.lef
+Notice 0:     Created 1 library cells
+Notice 0: Finished LEF file:  repair_tie_fanout3.lef
+Inserted 10 tie LOGIC1_X1 instances for 1 nets.
 t1 10
 t1_0 10
 t1_1 10
@@ -13,4 +16,5 @@ t1_4 10
 t1_5 10
 t1_6 10
 t1_7 10
-t1_8 2
+t1_8 10
+t1_9 3

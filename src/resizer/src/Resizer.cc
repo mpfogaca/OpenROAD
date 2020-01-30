@@ -250,6 +250,7 @@ Resizer::resizePreamble(LibertyLibrarySeq *resize_libs)
 void
 Resizer::bufferInputs(LibertyCell *buffer_cell)
 {
+  init();
   inserted_buffer_count_ = 0;
   InstancePinIterator *port_iter(network_->pinIterator(network_->topInstance()));
   while (port_iter->hasNext()) {
@@ -319,6 +320,7 @@ Resizer::location(Instance *inst)
 void
 Resizer::bufferOutputs(LibertyCell *buffer_cell)
 {
+  init();
   inserted_buffer_count_ = 0;
   InstancePinIterator *port_iter(network_->pinIterator(network_->topInstance()));
   while (port_iter->hasNext()) {
@@ -1937,6 +1939,7 @@ Resizer::repairTieFanout(LibertyPort *tie_port,
   InstanceSeq insts;
   findCellInstances(tie_cell, insts);
   int hi_fanout_count = 0;
+  inserted_buffer_count_ = 0;
   for (Instance *inst : insts) {
     Pin *tie_drvr = network_->findPin(inst, tie_port);
     int fanout = this->fanout(tie_drvr);
@@ -1967,7 +1970,7 @@ Resizer::repairTieFanout(LibertyPort *tie_port,
 	      tie_inst_index++;
 	    }
 	    Instance *load_inst = network_->instance(pin);
-	    LibertyPort *load_port = network_->libertyPort(pin);
+	    Port *load_port = network_->port(pin);
 	    sta_->disconnectPin(pin);
 	    sta_->connectPin(load_inst, load_port, tie_net);
 	  }
@@ -1977,11 +1980,17 @@ Resizer::repairTieFanout(LibertyPort *tie_port,
       if (verbose)
 	report_->print("High fanout tie net %s inserted %d cells for %d loads.\n",
 		       network_->pathName(tie_net0),
-		       tie_inst_index + 1,
+		       tie_inst_index,
 		       load_index);
       hi_fanout_count++;
+      inserted_buffer_count_ += tie_inst_index;
     }
   }
+  if (inserted_buffer_count_ > 0)
+    report_->print("Inserted %d tie %s instances for %d nets.\n",
+		   inserted_buffer_count_,
+		   tie_cell->name(),
+		   hi_fanout_count);
 }
 
 void

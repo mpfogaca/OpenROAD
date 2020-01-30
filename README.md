@@ -169,15 +169,14 @@ Gate resizer commands are shown below.
 
 ```
 set_wire_rc [-layer layer_name] [-resistance res ] [-capacitance cap] [-corner corner_name]
-resize [-buffer_inputs]
-       [-buffer_outputs]
-       [-resize]
-       [-resize_libraries resize_libraries]
-       [-repair_max_cap]
-       [-repair_max_slew]
-       [-buffer_cell buffer_cell]
+buffer_ports [-inputs] [-outputs] -buffer_cell buffer_cell
+resize [-libraries resize_libraries]
        [-dont_use cells]
        [-max_utilization util]
+repair_max_cap -buffer_cell buffer_cell
+               [-max_utilization util]
+repair_max_slew -buffer_cell buffer_cell
+                [-max_utilization util]
 repair_max_fanout -max_fanout fanout
        -buffer_cell buffer_cell
        [-max_utilization util]
@@ -204,25 +203,27 @@ is not called before resizing, the default_wireload model specified in
 the first liberty file or with the SDC set_wire_load command is used
 to make parasitics.
 
-The `resize` command buffers top level input and output ports, resizes
-gates, and then uses buffer insertion to repair maximum capacitance
-and slew violations. Use the `-buffer_inputs`, `-buffer_outputs`,
-`-resize`, `-repair_max_cap` and `-repair_max_slew` options to invoke
-a single mode. With none of the options specified all are done. The
-`-buffer_cell` argument is required for buffer insertion
-(`-repair_max_cap` or `-repair_max_slew`). The `-resize_libraries`
-option specifies which libraries to use when
-resizing. `resize_libraries` defaults to all of the liberty libraries
-that have been read. Some designs have multiple libraries with
-different transistor thresholds (Vt) and are used to trade off power
-and speed. Chosing a low Vt library uses more power but results in a
-faster design after the resizing step. Use the `-dont_use` keyword to
-specify a list of patterns of cells to not use. For example, "*/DLY*"
-says do not use cells with names that begin with "DLY" in all
-libraries.
+The `buffer_ports` command buffers top level input and output ports.
+The default behavior is `-inputs` and `-outputs` if neither is specified.
 
-The resizer stops when the design area is `-max_utilization util`
-percent of the core area. `util` is between 0 and 100.
+The `resize` command resizes gates, and then uses buffer insertion to
+repair maximum capacitance and slew violations. Use the
+`-buffer_inputs`, `-buffer_outputs`, `-resize`, `-repair_max_cap` and
+`-repair_max_slew` options to invoke a single mode. With none of the
+options specified all are done. The `-buffer_cell` argument is
+required for buffer insertion (`-repair_max_cap` or
+`-repair_max_slew`). The `-resize_libraries` option specifies which
+libraries to use when resizing. `resize_libraries` defaults to all of
+the liberty libraries that have been read. Some designs have multiple
+libraries with different transistor thresholds (Vt) and are used to
+trade off power and speed. Chosing a low Vt library uses more power
+but results in a faster design after the resizing step. Use the
+`-dont_use` keyword to specify a list of patterns of cells to not
+use. For example, "*/DLY*" says do not use cells with names that begin
+with "DLY" in all libraries.
+
+The resizer commands stop when the design area is `-max_utilization
+util` percent of the core area. `util` is between 0 and 100.
 
 A typical resizer command file is shown below.
 
