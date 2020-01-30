@@ -108,6 +108,7 @@ public:
         void setOutputSlew(unsigned slew) { _outputSlew = slew; }
         unsigned getOutputCap() const { return _outputCap; }
         void setOutputCap(unsigned cap) { _outputCap = cap; }
+        const std::vector<unsigned>& allCharWires() const { return _charWires; }
 protected:
         unsigned _length;
         unsigned _outputSlew;
@@ -188,6 +189,13 @@ public:
 
         void createTopologyWire(unsigned length) { _topologyWires.push_back(length); }
         TopologyWire& getFirstWire() { return _topologyWires[0]; }
+       
+        void forEachTopologyWire(const std::function<void(unsigned, TopologyWire&)>& func) {
+                for (unsigned idx = 0; idx < _topologyWires.size(); ++idx) {
+                        func(idx, _topologyWires[idx]);
+                } 
+        }
+
         void forEachTopologyWire(const std::function<void(TopologyWire&)>& func) {
                 for (TopologyWire& wire: _topologyWires) {
                         func(wire);
@@ -200,6 +208,8 @@ public:
                 unsigned idx = numBranches - 1;
                 _branchSinkLocs.resize(numBranches);
                 _parentBranchIdx.resize(numBranches);
+                _topologyWireIdx.resize(numBranches);
+                _branchDrivingSubNet.resize(numBranches, nullptr);
                 return idx;
         }
 
@@ -208,7 +218,12 @@ public:
         void setParentBranchIdx(unsigned idx, unsigned parent) { _parentBranchIdx[idx] = parent; }
         unsigned getParentBranchIdx(unsigned idx) const { return _parentBranchIdx[idx]; }
         void addUpstreamBranchIdx(unsigned idx) { _upstreamBranchIdx.push_back(idx); }
-        unsigned getUpstreamBranchIdx(unsigned idx) const { return _upstreamBranchIdx[idx]; }        
+        unsigned getUpstreamBranchIdx(unsigned idx) const { return _upstreamBranchIdx[idx]; }
+        void setTopologyWireIdx(unsigned branchIdx, unsigned wireIdx) { _topologyWireIdx[branchIdx] = wireIdx; }
+        unsigned getTopologyWireIdx(unsigned branchIdx) const { return _topologyWireIdx[branchIdx]; }
+        const TopologyWire& getTopologyWire(unsigned branchIdx) { 
+                return _topologyWires[getTopologyWireIdx(branchIdx)]; 
+        }
         void computeBranchLocations(LevelTopology* parentTopology);
         void refineBranchLocations(unsigned parentIdx,
                                    const std::vector<Point<double>>& sinkLocs,
@@ -225,18 +240,19 @@ private:
         std::vector<unsigned>          _wireSegments;
         std::vector<Point<double>>     _branchPointLoc;
         std::vector<unsigned>          _parents;
-        std::vector<Clock::SubNet*>    _branchDrivingSubNet;
-        std::vector<std::vector<Point<double>>> _branchSinkLocs;
 
         double    _width;
         double    _height;
         unsigned  _numSinks;
         unsigned  _branchingFactor;
         Direction _direction;
-        std::vector<Point<double>> _branchLocs;
-        std::vector<unsigned>      _upstreamBranchIdx;
-        std::vector<unsigned>      _parentBranchIdx;
-        std::vector<TopologyWire>  _topologyWires;
+        std::vector<Point<double>>  _branchLocs;
+        std::vector<unsigned>       _upstreamBranchIdx;
+        std::vector<unsigned>       _parentBranchIdx;
+        std::vector<unsigned>       _topologyWireIdx;
+        std::vector<TopologyWire>   _topologyWires;
+        std::vector<Clock::SubNet*> _branchDrivingSubNet;
+        std::vector<std::vector<Point<double>>> _branchSinkLocs;
 };
 
 //-----------------------------------------------------------------------------

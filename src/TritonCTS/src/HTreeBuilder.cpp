@@ -81,6 +81,7 @@ void HTreeBuilder::run() {
         computeCharWires();
         computeBranchLocations();
         plotSolution();
+        createClockSubNets();
         return; 
         for (unsigned level = 1; level <= _clockTreeMaxDepth; ++level) {
                 bool stopCriterionFound = false;
@@ -300,7 +301,7 @@ void LevelTopology::computeBranchLocations(LevelTopology* parentTopology) {
                 Point<double> upperLoc = loc;
                 unsigned prevLowerBranch = NO_PARENT;
                 unsigned prevUpperBranch = NO_PARENT;
-                forEachTopologyWire([&] (TopologyWire& wire) {
+                forEachTopologyWire([&] (unsigned wireIdx, TopologyWire& wire) {
                         if (isVertical()) {
                                 lowerLoc.setY(lowerLoc.getY() - wire.getLength());                        
                                 upperLoc.setY(upperLoc.getY() + wire.getLength());                        
@@ -312,11 +313,13 @@ void LevelTopology::computeBranchLocations(LevelTopology* parentTopology) {
                         addUpstreamBranchIdx(idx);
                         setParentBranchIdx(lowerIdx, prevLowerBranch);
                         prevLowerBranch = lowerIdx;
+                        setTopologyWireIdx(lowerIdx, wireIdx);
 
                         unsigned upperIdx = addBranchLocation(upperLoc);       
                         addUpstreamBranchIdx(idx);
                         setParentBranchIdx(upperIdx, prevUpperBranch);
                         prevUpperBranch = upperIdx;
+                        setTopologyWireIdx(upperIdx, wireIdx);
                 });
 
                 refineBranchLocations(idx, parentTopology->getBranchSinksLocations(idx), loc);
@@ -655,17 +658,25 @@ void HTreeBuilder::createClockSubNets() {
                                                              centerX, centerY); 
         Clock::SubNet& rootClockSubNet = _clock.addSubNet("clknet_0");
         rootClockSubNet.addInst(rootBuffer);
-
+       
         // First level...
         LevelTopology &topLevelTopology = _topologyForEachLevel[0];
-        topLevelTopology.forEachBranchingPoint( [&] (unsigned idx, Point<double> branchPoint) {
+        topLevelTopology.forEachBranchLocation( [&] (unsigned idx, Point<double> branchPoint) {
+                Clock::SubNet* drivingSubNet = &rootClockSubNet;
+                Point<double> source = _sinkRegion.computeCenter();
+                unsigned parentBranchIdx = topLevelTopology.getParentBranchIdx(idx);
+                if (parentBranchIdx != LevelTopology::NO_PARENT) {
+                        drivingSubNet = topLevelTopology.getBranchDrivingSubNet(parentBranchIdx);
+                        source = topLevelTopology.getBranchLocation(parentBranchIdx);
+                }                
+
                 SegmentBuilder builder("clkbuf_1_" + std::to_string(idx) + "_",
                                        "clknet_1_" + std::to_string(idx) + "_",
-                                       _sinkRegion.computeCenter(), 
+                                       source, 
                                        branchPoint,
-                                       topLevelTopology.getWireSegments(),
+                                       topLevelTopology.getTopologyWire(idx).allCharWires(),
                                        _clock,
-                                       rootClockSubNet,
+                                       *drivingSubNet,
                                        *_techChar,
                                        _wireSegmentUnit);
                 builder.build();
@@ -675,24 +686,41 @@ void HTreeBuilder::createClockSubNets() {
                 }
                 topLevelTopology.setBranchDrivingSubNet(idx, *builder.getDrivingSubNet());                
         });
-        
+        //return; 
         // Others...
         for (unsigned levelIdx = 1; levelIdx < _topologyForEachLevel.size(); ++levelIdx) {
+                std::cout << "Level: " << levelIdx << std::endl;
                 LevelTopology& topology  = _topologyForEachLevel[levelIdx];
-                topology.forEachBranchingPoint( [&] (unsigned idx, Point<double> branchPoint) {
-                        unsigned parentIdx = topology.getBranchingPointParentIdx(idx);
+                topology.forEachBranchLocation( [&] (unsigned idx, Point<double> branchPoint) {
                         LevelTopology &parentTopology = _topologyForEachLevel[levelIdx - 1];
-                        Point<double> parentPoint = parentTopology.getBranchingPoint(parentIdx);
-                       
+                        std::cout << "Branch: " << idx << std::endl;
+                        
+                        Clock::SubNet* drivingSubNet = nullptr;
+                        Point<double> source(0, 0);
+                        unsigned parentBranchIdx = topology.getParentBranchIdx(idx);
+                        if (parentBranchIdx != LevelTopology::NO_PARENT) {
+                                std::cout << "Has parent" << std::endl;
+                                source = topology.getBranchLocation(parentBranchIdx);
+                                drivingSubNet = topology.getBranchDrivingSubNet(parentBranchIdx);
+                        } else {
+                                std::cout << "Has no parent" << std::endl;
+                                parentBranchIdx = topology.getUpstreamBranchIdx(idx);
+                                std::cout << "Upstream parent: " << parentBranchIdx << std::endl;
+                                source = parentTopology.getBranchLocation(parentBranchIdx);
+                                std::cout << "Source: " << source << std::endl;
+                                drivingSubNet = parentTopology.getBranchDrivingSubNet(parentBranchIdx);
+                                std::cout << "Got all information" << std::endl;
+                        }
+
                         SegmentBuilder builder("clkbuf_" + std::to_string(levelIdx+1) + "_" + 
                                                std::to_string(idx) + "_",
                                                "clknet_" + std::to_string(levelIdx+1) + "_" + 
                                                std::to_string(idx) + "_",
-                                               parentPoint, 
+                                               source, 
                                                branchPoint,
-                                               topology.getWireSegments(),
+                                               topology.getTopologyWire(idx).allCharWires(),
                                                _clock,
-                                               *parentTopology.getBranchDrivingSubNet(parentIdx),
+                                               *drivingSubNet,
                                                *_techChar,
                                                _wireSegmentUnit);
                         builder.build();
@@ -714,7 +742,7 @@ void HTreeBuilder::createClockSubNets() {
         LevelTopology& leafTopology = _topologyForEachLevel.back();
         unsigned levelIdx = _topologyForEachLevel.size() - 1;
         unsigned numSinks = 0;
-        leafTopology.forEachBranchingPoint( [&] (unsigned idx, Point<double> branchPoint) {
+        leafTopology.forEachBranchLocation( [&] (unsigned idx, Point<double> branchPoint) {
                 Clock::SubNet* subNet = leafTopology.getBranchDrivingSubNet(idx);
                 subNet->setLeafLevel(true);
                 
