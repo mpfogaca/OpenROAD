@@ -91,7 +91,7 @@ Resizer::Resizer() :
   level_drvr_verticies_valid_(false),
   tgt_slews_{0.0, 0.0},
   unique_net_index_(1),
-  unique_buffer_index_(1),
+  unique_inst_index_(1),
   resize_count_(0),
   core_area_(0.0),
   design_area_(0.0)
@@ -1443,7 +1443,6 @@ Resizer::repairMaxFanout(int max_fanout,
   inserted_buffer_count_ = 0;
 
   init();
-  sta_->findDelays();
   // Rebuffer in reverse level order.
   for (int i = level_drvr_verticies_.size() - 1; i >= 0; i--) {
     Vertex *vertex = level_drvr_verticies_[i];
@@ -1483,21 +1482,21 @@ Resizer::bufferLoads(Pin *drvr_pin,
   PinSeq::Iterator load_iter(loads);
   Vector<Instance*> buffers(buffer_count);
   Net *net = network_->net(drvr_pin);
-  Instance *parent = db_network_->topInstance();
+  Instance *top_inst = db_network_->topInstance();
   LibertyPort *buffer_in, *buffer_out;
   buffer_cell->bufferPorts(buffer_in, buffer_out);
   for (int i = 0; i < buffer_count; i++) {
-    string buffer_out_net_name = makeUniqueNetName();
-    Net *buffer_out_net = db_network_->makeNet(buffer_out_net_name.c_str(), parent);
-    string buffer_name = makeUniqueBufferName();
+    string load_net_name = makeUniqueNetName();
+    Net *load_net = db_network_->makeNet(load_net_name.c_str(), top_inst);
+    string inst_name = makeUniqueBufferName();
     Instance *buffer = db_network_->makeInstance(buffer_cell,
-						 buffer_name.c_str(),
-						 parent);
+						 inst_name.c_str(),
+						 top_inst);
     inserted_buffer_count_++;
     design_area_ += area(db_network_->cell(buffer_cell));
 
     sta_->connectPin(buffer, buffer_in, net);
-    sta_->connectPin(buffer, buffer_out, buffer_out_net);
+    sta_->connectPin(buffer, buffer_out, load_net);
     int l = 0;
     while (load_iter.hasNext()
 	   && l < max_fanout) {
@@ -1505,167 +1504,88 @@ Resizer::bufferLoads(Pin *drvr_pin,
       Instance *load_inst = network_->instance(load);
       Port *load_port = network_->port(load);
       sta_->disconnectPin(load);
-      sta_->connectPin(load_inst, load_port, buffer_out_net);
+      sta_->connectPin(load_inst, load_port, load_net);
       l++;
     }
   }
 }
 
-void
-Resizer::findLoads(Pin *drvr_pin,
-		   PinSeq &loads)
-{
-  PinSeq drvrs;
-  PinSet visited_drvrs;
-  FindNetDrvrLoads visitor(drvr_pin, visited_drvrs, loads, drvrs, network_);
-  network_->visitConnectedPins(drvr_pin, visitor);
-}
-
 ////////////////////////////////////////////////////////////////
 
-string
-Resizer::makeUniqueNetName()
+// Repair tie hi/low net driver fanout by duplicating the
+// tie hi/low instances.
+void
+Resizer::repairTieFanout(LibertyPort *tie_port,
+			 int max_fanout,
+			 bool verbose)
 {
-  string node_name;
   Instance *top_inst = network_->topInstance();
-  do 
-    stringPrint(node_name, "net%d", unique_net_index_++);
-  while (network_->findNet(top_inst, node_name.c_str()));
-  return node_name;
-}
+  LibertyCell *tie_cell = tie_port->libertyCell();
+  InstanceSeq insts;
+  findCellInstances(tie_cell, insts);
+  int hi_fanout_count = 0;
+  int inserted_clone_count = 0;
+  Instance *parent = db_network_->topInstance();
+  for (Instance *inst : insts) {
+    Pin *drvr_pin = network_->findPin(inst, tie_port);
+    int fanout = this->fanout(drvr_pin);
+    if (fanout > max_fanout) {
+      PinSeq loads;
+      findLoads(drvr_pin, loads);
+      // group loads by location
+      PinSeq::Iterator load_iter(loads);
+      int clone_count = ceil(fanout / static_cast<double>(max_fanout)) - 1;
+      const char *inst_name = network_->name(inst);
+      Net *net = network_->net(drvr_pin);
 
-string
-Resizer::makeUniqueBufferName()
-{
-  string buffer_name;
-  do 
-    stringPrint(buffer_name, "buffer%d", unique_buffer_index_++);
-  while (network_->findInstance(buffer_name.c_str()));
-  return buffer_name;
-}
+      for (int i = 0; i < clone_count; i++) {
+	string clone_name = makeUniqueInstName(inst_name);
+	Instance *clone = sta_->makeInstance(clone_name.c_str(),
+					     tie_cell, top_inst);
+	inserted_clone_count++;
 
-float
-Resizer::bufferInputCapacitance(LibertyCell *buffer_cell)
-{
-  LibertyPort *input, *output;
-  buffer_cell->bufferPorts(input, output);
-  return portCapacitance(input);
-}
+	string load_net_name = makeUniqueNetName();
+	Net *load_net = db_network_->makeNet(load_net_name.c_str(), top_inst);
+	sta_->connectPin(clone, tie_port, load_net);
 
-float
-Resizer::pinCapacitance(const Pin *pin)
-{
-  LibertyPort *port = network_->libertyPort(pin);
-  if (port)
-    return portCapacitance(port);
-  else
-    return 0.0;
-}
-
-float
-Resizer::portCapacitance(const LibertyPort *port)
-{
-  float cap1 = port->capacitance(RiseFall::rise(), min_max_);
-  float cap2 = port->capacitance(RiseFall::fall(), min_max_);
-  return max(cap1, cap2);
-}
-
-Required
-Resizer::pinRequired(const Pin *pin)
-{
-  Vertex *vertex = graph_->pinLoadVertex(pin);
-  return sta_->vertexRequired(vertex, min_max_);
-}
-
-float
-Resizer::bufferDelay(LibertyCell *buffer_cell,
-		     float load_cap)
-{
-  LibertyPort *input, *output;
-  buffer_cell->bufferPorts(input, output);
-  return gateDelay(output, load_cap);
-}
-
-float
-Resizer::gateDelay(LibertyPort *out_port,
-		   float load_cap)
-{
-  LibertyCell *cell = out_port->libertyCell();
-  // Max rise/fall delays.
-  ArcDelay max_delay = -INF;
-  LibertyCellTimingArcSetIterator set_iter(cell);
-  while (set_iter.hasNext()) {
-    TimingArcSet *arc_set = set_iter.next();
-    if (arc_set->to() == out_port) {
-      TimingArcSetArcIterator arc_iter(arc_set);
-      while (arc_iter.hasNext()) {
-	TimingArc *arc = arc_iter.next();
-	RiseFall *in_rf = arc->fromTrans()->asRiseFall();
-	float in_slew = tgt_slews_[in_rf->index()];
-	ArcDelay gate_delay;
-	Slew drvr_slew;
-	arc_delay_calc_->gateDelay(cell, arc, in_slew, load_cap,
-				   nullptr, 0.0, pvt_, dcalc_ap_,
-				   gate_delay,
-				   drvr_slew);
-	max_delay = max(max_delay, gate_delay);
+	int l = 0;
+	while (load_iter.hasNext()
+	       && l < max_fanout) {
+	  Pin *load = load_iter.next();
+	  Instance *load_inst = network_->instance(load);
+	  Port *load_port = network_->port(load);
+	  sta_->disconnectPin(load);
+	  sta_->connectPin(load_inst, load_port, load_net);
+	  l++;
+	}
       }
+      if (verbose)
+	report_->print("High fanout tie net %s inserted %d cells for %d loads.\n",
+		       network_->pathName(net),
+		       clone_count,
+		       fanout);
+      hi_fanout_count++;
     }
   }
-  return max_delay;
+  if (inserted_clone_count > 0)
+    report_->print("Inserted %d tie %s instances for %d nets.\n",
+		   inserted_clone_count,
+		   tie_cell->name(),
+		   hi_fanout_count);
 }
 
-double
-Resizer::designArea()
+void
+Resizer::findCellInstances(LibertyCell *cell,
+			   // Return value.
+			   InstanceSeq &insts)
 {
-  if (design_area_ == 0.0) {
-    for (dbInst *inst : db_->getChip()->getBlock()->getInsts()) {
-      dbMaster *master = inst->getMaster();
-      design_area_ += area(master);
-    }
+  LeafInstanceIterator *inst_iter = network_->leafInstanceIterator();
+  while (inst_iter->hasNext()) {
+    Instance *inst = inst_iter->next();
+    if (network_->libertyCell(inst) == cell)
+      insts.push_back(inst);
   }
-  return design_area_;
-}
-
-adsPoint
-pinLocation(Pin *pin,
-	    const dbNetwork *network)
-{
-  dbITerm *iterm;
-  dbBTerm *bterm;
-  network->staToDb(pin, iterm, bterm);
-  if (iterm) {
-    dbInst *inst = iterm->getInst();
-    int x, y;
-    inst->getOrigin(x, y);
-    return adsPoint(x, y);
-  }
-  if (bterm) {
-    int x, y;
-    if (bterm->getFirstPinLocation(x, y))
-      return adsPoint(x, y);
-  }
-  return adsPoint(0, 0);
-}  
-
-bool
-pinIsPlaced(Pin *pin,
-	    const dbNetwork *network)
-{
-  dbITerm *iterm;
-  dbBTerm *bterm;
-  network->staToDb(pin, iterm, bterm);
-  dbPlacementStatus status = dbPlacementStatus::UNPLACED;
-  if (iterm) {
-    dbInst *inst = iterm->getInst();
-    status = inst->getPlacementStatus();
-  }
-  if (bterm)
-    status = bterm->getFirstPinPlacementStatus();
-  return status == dbPlacementStatus::PLACED
-    || status == dbPlacementStatus::LOCKED
-    || status == dbPlacementStatus::FIRM
-    || status == dbPlacementStatus::COVER;
+  delete inst_iter;
 }
 
 ////////////////////////////////////////////////////////////////
@@ -1927,84 +1847,155 @@ Resizer::findFloatingNets()
 
 ////////////////////////////////////////////////////////////////
 
-// Repair tie hi/low net driver fanout by duplicating the
-// tie hi/low instances.
-void
-Resizer::repairTieFanout(LibertyPort *tie_port,
-			 int max_fanout,
-			 bool verbose)
+string
+Resizer::makeUniqueNetName()
 {
+  string node_name;
   Instance *top_inst = network_->topInstance();
-  LibertyCell *tie_cell = tie_port->libertyCell();
-  InstanceSeq insts;
-  findCellInstances(tie_cell, insts);
-  int hi_fanout_count = 0;
-  inserted_buffer_count_ = 0;
-  for (Instance *inst : insts) {
-    Pin *tie_drvr = network_->findPin(inst, tie_port);
-    int fanout = this->fanout(tie_drvr);
-    if (fanout > max_fanout) {
-      const char *tie_inst_name0 = network_->name(inst);
-      Net *tie_net0 = network_->net(tie_drvr);
-      const char *tie_net_name0 = network_->name(tie_net0);
-      int tie_inst_index = 0;
-      Net *tie_net = nullptr;
-      int load_index = 0;
-      NetConnectedPinIterator *pin_iter = network_->connectedPinIterator(tie_drvr);
-      while (pin_iter->hasNext()) {
-	Pin *pin = pin_iter->next();
-	if (pin != tie_drvr) {
-	  // Leave the connections to the original instance.
-	  if (load_index >= max_fanout) {
-	    if ((load_index % max_fanout) == 0) {
-	      string tie_inst_name = tie_inst_name0;
-	      tie_inst_name += "_";
-	      tie_inst_name += to_string(tie_inst_index);
-	      Instance *tie_inst = sta_->makeInstance(tie_inst_name.c_str(),
-						      tie_cell, top_inst);
-	      string tie_net_name = tie_net_name0;
-	      tie_net_name += "_";
-	      tie_net_name += to_string(tie_inst_index);
-	      tie_net = sta_->makeNet(tie_net_name.c_str(), top_inst);
-	      sta_->connectPin(tie_inst, tie_port, tie_net);
-	      tie_inst_index++;
-	    }
-	    Instance *load_inst = network_->instance(pin);
-	    Port *load_port = network_->port(pin);
-	    sta_->disconnectPin(pin);
-	    sta_->connectPin(load_inst, load_port, tie_net);
-	  }
-	  load_index++;
-	}
-      }
-      if (verbose)
-	report_->print("High fanout tie net %s inserted %d cells for %d loads.\n",
-		       network_->pathName(tie_net0),
-		       tie_inst_index,
-		       load_index);
-      hi_fanout_count++;
-      inserted_buffer_count_ += tie_inst_index;
-    }
-  }
-  if (inserted_buffer_count_ > 0)
-    report_->print("Inserted %d tie %s instances for %d nets.\n",
-		   inserted_buffer_count_,
-		   tie_cell->name(),
-		   hi_fanout_count);
+  do 
+    stringPrint(node_name, "net%d", unique_net_index_++);
+  while (network_->findNet(top_inst, node_name.c_str()));
+  return node_name;
 }
 
-void
-Resizer::findCellInstances(LibertyCell *cell,
-			   // Return value.
-			   InstanceSeq &insts)
+string
+Resizer::makeUniqueBufferName()
 {
-  LeafInstanceIterator *inst_iter = network_->leafInstanceIterator();
-  while (inst_iter->hasNext()) {
-    Instance *inst = inst_iter->next();
-    if (network_->libertyCell(inst) == cell)
-      insts.push_back(inst);
+  return makeUniqueInstName("buffer");
+}
+
+string
+Resizer::makeUniqueInstName(const char *base_name)
+{
+  string inst_name;
+  do 
+    stringPrint(inst_name, "%s%d", base_name, unique_inst_index_++);
+  while (network_->findInstance(inst_name.c_str()));
+  return inst_name;
+}
+
+float
+Resizer::bufferInputCapacitance(LibertyCell *buffer_cell)
+{
+  LibertyPort *input, *output;
+  buffer_cell->bufferPorts(input, output);
+  return portCapacitance(input);
+}
+
+float
+Resizer::pinCapacitance(const Pin *pin)
+{
+  LibertyPort *port = network_->libertyPort(pin);
+  if (port)
+    return portCapacitance(port);
+  else
+    return 0.0;
+}
+
+float
+Resizer::portCapacitance(const LibertyPort *port)
+{
+  float cap1 = port->capacitance(RiseFall::rise(), min_max_);
+  float cap2 = port->capacitance(RiseFall::fall(), min_max_);
+  return max(cap1, cap2);
+}
+
+Required
+Resizer::pinRequired(const Pin *pin)
+{
+  Vertex *vertex = graph_->pinLoadVertex(pin);
+  return sta_->vertexRequired(vertex, min_max_);
+}
+
+float
+Resizer::bufferDelay(LibertyCell *buffer_cell,
+		     float load_cap)
+{
+  LibertyPort *input, *output;
+  buffer_cell->bufferPorts(input, output);
+  return gateDelay(output, load_cap);
+}
+
+float
+Resizer::gateDelay(LibertyPort *out_port,
+		   float load_cap)
+{
+  LibertyCell *cell = out_port->libertyCell();
+  // Max rise/fall delays.
+  ArcDelay max_delay = -INF;
+  LibertyCellTimingArcSetIterator set_iter(cell);
+  while (set_iter.hasNext()) {
+    TimingArcSet *arc_set = set_iter.next();
+    if (arc_set->to() == out_port) {
+      TimingArcSetArcIterator arc_iter(arc_set);
+      while (arc_iter.hasNext()) {
+	TimingArc *arc = arc_iter.next();
+	RiseFall *in_rf = arc->fromTrans()->asRiseFall();
+	float in_slew = tgt_slews_[in_rf->index()];
+	ArcDelay gate_delay;
+	Slew drvr_slew;
+	arc_delay_calc_->gateDelay(cell, arc, in_slew, load_cap,
+				   nullptr, 0.0, pvt_, dcalc_ap_,
+				   gate_delay,
+				   drvr_slew);
+	max_delay = max(max_delay, gate_delay);
+      }
+    }
   }
-  delete inst_iter;
+  return max_delay;
+}
+
+double
+Resizer::designArea()
+{
+  if (design_area_ == 0.0) {
+    for (dbInst *inst : db_->getChip()->getBlock()->getInsts()) {
+      dbMaster *master = inst->getMaster();
+      design_area_ += area(master);
+    }
+  }
+  return design_area_;
+}
+
+adsPoint
+pinLocation(Pin *pin,
+	    const dbNetwork *network)
+{
+  dbITerm *iterm;
+  dbBTerm *bterm;
+  network->staToDb(pin, iterm, bterm);
+  if (iterm) {
+    dbInst *inst = iterm->getInst();
+    int x, y;
+    inst->getOrigin(x, y);
+    return adsPoint(x, y);
+  }
+  if (bterm) {
+    int x, y;
+    if (bterm->getFirstPinLocation(x, y))
+      return adsPoint(x, y);
+  }
+  return adsPoint(0, 0);
+}  
+
+bool
+pinIsPlaced(Pin *pin,
+	    const dbNetwork *network)
+{
+  dbITerm *iterm;
+  dbBTerm *bterm;
+  network->staToDb(pin, iterm, bterm);
+  dbPlacementStatus status = dbPlacementStatus::UNPLACED;
+  if (iterm) {
+    dbInst *inst = iterm->getInst();
+    status = inst->getPlacementStatus();
+  }
+  if (bterm)
+    status = bterm->getFirstPinPlacementStatus();
+  return status == dbPlacementStatus::PLACED
+    || status == dbPlacementStatus::LOCKED
+    || status == dbPlacementStatus::FIRM
+    || status == dbPlacementStatus::COVER;
 }
 
 int
@@ -2019,6 +2010,16 @@ Resizer::fanout(Pin *drvr_pin)
   }
   delete pin_iter;
   return fanout;
+}
+
+void
+Resizer::findLoads(Pin *drvr_pin,
+		   PinSeq &loads)
+{
+  PinSeq drvrs;
+  PinSet visited_drvrs;
+  FindNetDrvrLoads visitor(drvr_pin, visited_drvrs, loads, drvrs, network_);
+  network_->visitConnectedPins(drvr_pin, visitor);
 }
 
 }
