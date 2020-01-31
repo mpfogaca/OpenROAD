@@ -231,6 +231,7 @@ private:
         void computeCharWires();
         void computeCharWire(TopologyWire& wire, unsigned inputCap, unsigned inputSlew);
         void computeBranchLocations();
+        void computeBranchingFactors(); 
 
         unsigned computeMinDelaySegment(unsigned length, 
                                         unsigned inputSlew,
@@ -251,6 +252,7 @@ private:
 
 protected:
         Box<double>                _sinkRegion;
+        std::vector<unsigned>      _branchingFactors;
         std::vector<LevelTopology> _topologyForEachLevel;
         
         DBU      _wireSegmentUnit     = -1;

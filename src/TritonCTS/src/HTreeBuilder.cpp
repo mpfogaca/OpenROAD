@@ -98,10 +98,12 @@ void HTreeBuilder::initSinkRegion() {
 
 void HTreeBuilder::initTopology() {
         std::cout << " Initializing topology...\n";
-        std::vector<unsigned> _branchingFactors = _options->getBranchingFactors();
-        if (_branchingFactors.size() < 1) {
         
+        _branchingFactors = _options->getBranchingFactors();
+        if (_branchingFactors.size() < 1) {
+                computeBranchingFactors();
         } 
+
         _maxLevel = _branchingFactors.size();
 
         unsigned numSinks = _clock.getNumSinks();
@@ -123,6 +125,12 @@ void HTreeBuilder::initTopology() {
                         topology.setDirection(LevelTopology::HORIZONTAL);                
                         width  /= fanout;
                 }
+                
+                if (width < 2.0 || height < 2.0) {
+                        std::cout << "    [WARNING] Sink region too small. Stopping at level "
+                                  << level << "...\n";
+                } 
+
                 topology.setHeight(height);
                 topology.setWidth(width);
 
@@ -149,6 +157,16 @@ void HTreeBuilder::initTopology() {
         if (numSinks > _numMaxLeafSinks) {
                 std::cout << " Number of sinks on the sinks region is too large. Exiting...\n";
                 std::exit(1);
+        }
+}
+
+void HTreeBuilder::computeBranchingFactors() {
+        std::cout << " Using branching factor of 2...\n";
+        const unsigned numSinks = _clock.getNumSinks();
+        _maxLevel = 1;
+        while (numSinks / pow(2, _maxLevel) > _numMaxLeafSinks) {
+                _branchingFactors.push_back(2);
+                ++_maxLevel; 
         }
 }
 
