@@ -198,16 +198,42 @@ void HTreeBuilder::computeCharWires() {
 
         TopologyWire *prevWire = &dummyRootWire;
         for (unsigned level = 1; level <= _maxLevel; ++level) {
+                std::cout << " Computing wires for level "<< level << "...\n";
+                bool plotHeader = true;
                 LevelTopology& topology = _topologyForEachLevel[level-1];
-                std::cout << " Level: " << level << "\n";
                 topology.forEachTopologyWire( [&] (TopologyWire& wire) {
                         computeCharWire(wire, 
                                         prevWire->getOutputCap(), 
                                         prevWire->getOutputSlew());
-                        prevWire = &wire;                                    
+                        prevWire = &wire;   
+                        reportTopologyWire(wire, plotHeader);
+                        plotHeader = false;
                 });                                
         }
 }
+
+void HTreeBuilder::reportTopologyWire(TopologyWire& wire, bool plotHeader) const {
+        if (plotHeader) {
+                std::cout << " ---------------------------------------\n";
+                std::cout << " "
+                          << std::setw(6) << "Key" 
+                          << std::setw(9) << "OutSlew"
+                          << std::setw(6) << "Load"
+                          << std::setw(9) << "Length"
+                          << std::setw(9) << "isBuf" << "\n";
+                std::cout << " ---------------------------------------\n";
+        }
+        for (unsigned wireKey: wire.allCharWires()) {
+                const WireSegment& wire = _techChar->getWireSegment(wireKey);
+                std::cout << std::setw(6) << wireKey 
+                          << std::setw(9) << (unsigned) wire.getOutputSlew()
+                          << std::setw(6) << (unsigned) wire.getLoad()
+                          << std::setw(9) << (unsigned) wire.getLength()
+                          << std::setw(9) << wire.isBuffered() << "\n";
+        }
+        std::cout << " ---------------------------------------\n";
+};
+
 
 void HTreeBuilder::computeCharWire(TopologyWire& wire, unsigned inputCap, unsigned inputSlew) {
         const unsigned SLEW_THRESHOLD = _options->getMaxSlew();
@@ -229,8 +255,6 @@ void HTreeBuilder::computeCharWire(TopologyWire& wire, unsigned inputCap, unsign
                         unsigned key = computeMinDelaySegment(charSegLength, inputSlew, inputCap, 
                                                               SLEW_THRESHOLD, INIT_TOLERANCE, outSlew, outCap);
                         
-                        _techChar->reportSegment(key);
-
                         inputCap = std::max(outCap, _minInputCap);
                         inputSlew = outSlew;
                         wire.addCharWire(key); 
@@ -258,7 +282,6 @@ void HTreeBuilder::computeBranchLocations() {
                 LevelTopology& topology = _topologyForEachLevel[level-1];
                 topology.computeBranchLocations(parentTopology);
                 parentTopology = &topology;
-                //break;
         }
 }
 
