@@ -114,8 +114,6 @@ void DbWrapper::initClock(odb::dbNet* net) {
         }
 
         // Initialize clock net
-        std::cout << net->getConstName() << std::endl;
-        
         Clock clockNet(net->getConstName(), 
                        driver,
                        xPin, yPin);
