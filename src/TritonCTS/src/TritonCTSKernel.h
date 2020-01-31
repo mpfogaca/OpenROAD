@@ -66,6 +66,7 @@ public:
 
 private:
         void printHeader() const;
+        void createSandboxTimer();
         void importCharacterization();
         void checkCharacterization();
         void findClockRoots();

@@ -62,6 +62,8 @@ public:
         
         void init();
         void findClockRoots();
+        
+        void createStaSnippet() const;
 private:
         sta::dbSta*   _openSta   = nullptr;
         sta::Sdc*     _sdc       = nullptr;

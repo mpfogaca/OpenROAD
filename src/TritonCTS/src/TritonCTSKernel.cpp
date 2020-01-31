@@ -51,6 +51,7 @@ namespace TritonCTS {
 
 void TritonCTSKernel::runTritonCts() {
         printHeader();
+        createSandboxTimer();
         importCharacterization();
         findClockRoots();
         populateTritonCts();
@@ -71,11 +72,19 @@ void TritonCTSKernel::printHeader() const {
         std::cout << " Current time: " << std::ctime(&startTime);
 }
 
+void TritonCTSKernel::createSandboxTimer() {
+        std::cout << " **************************\n";
+        std::cout << " *  Create sandbox timer  *\n";
+        std::cout << " **************************\n";
+
+        _staEngine.createStaSnippet();
+}
+
 void TritonCTSKernel::importCharacterization() {
         std::cout << " *****************************\n";
         std::cout << " *  Import characterization  *\n";
         std::cout << " *****************************\n";
-       
+        
         _techChar.parse(_options.getLutFile(), _options.getSolListFile()); 
 }
 

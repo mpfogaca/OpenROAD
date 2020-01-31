@@ -76,4 +76,12 @@ void StaEngine::findClockRoots() {
         _options->setClockNets(clockNames);
 }
 
+void StaEngine::createStaSnippet() const {
+        std::cout << " Create a new Sta object\n";
+        
+        // Code goes here ...
+ 
+        std::cout << " Finish execution\n";        
+}
+
 }
