@@ -129,6 +129,7 @@ void HTreeBuilder::initTopology() {
                 if (width < 2.0 || height < 2.0) {
                         std::cout << "    [WARNING] Sink region too small. Stopping at level "
                                   << level << "...\n";
+                        break;
                 } 
 
                 topology.setHeight(height);
@@ -164,7 +165,8 @@ void HTreeBuilder::computeBranchingFactors() {
         std::cout << " Using branching factor of 2...\n";
         const unsigned numSinks = _clock.getNumSinks();
         _maxLevel = 1;
-        while (numSinks / pow(2, _maxLevel) > _numMaxLeafSinks) {
+        _branchingFactors.push_back(2);
+        while (std::ceil((double) numSinks / pow(2, _maxLevel)) >= _numMaxLeafSinks) {
                 _branchingFactors.push_back(2);
                 ++_maxLevel; 
         }
