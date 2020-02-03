@@ -73,7 +73,9 @@ public:
         void setPlotSolution(bool plot) { _plotSolution = plot; } 
         bool getPlotSolution() const { return _plotSolution; }
         void setNumMaxLeafSinks(unsigned numSinks) { _numMaxLeafSinks = numSinks; }
-        unsigned getNumMaxLeafSinks() const { return _numMaxLeafSinks; }        
+        unsigned getNumMaxLeafSinks() const { return _numMaxLeafSinks; }
+        void setNumMinLeafSinks(unsigned numSinks) { _numMinLeafSinks = numSinks; }
+        unsigned getNumMinLeafSinks() const { return _numMinLeafSinks; }
         void setMaxSlew(unsigned slew) { _maxSlew = slew; }
         unsigned getMaxSlew() const { return _maxSlew; }
         void setClockTreeMaxDepth(unsigned depth) { _clockTreeMaxDepth = depth; }
@@ -103,6 +105,7 @@ private:
         unsigned    _dbId                    = 0;
         bool        _plotSolution            = false;
         unsigned    _numMaxLeafSinks         = 15;
+        unsigned    _numMinLeafSinks         = 5;
         unsigned    _maxSlew                 = 4;
         unsigned    _clockTreeMaxDepth       = 100;
         bool        _enableFakeLutEntries    = true;

@@ -258,6 +258,7 @@ protected:
         DBU      _wireSegmentUnit     = -1;
         unsigned _minInputCap         =  1;
         unsigned _numMaxLeafSinks     =  0;
+        unsigned _numMinLeafSinks     =  0;
         unsigned _minLengthSinkRegion =  0;
         unsigned _clockTreeMaxDepth   =  0;
         unsigned _maxLevel            =  0;

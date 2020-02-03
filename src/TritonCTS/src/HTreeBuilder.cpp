@@ -57,6 +57,7 @@ void HTreeBuilder::run() {
         _clockTreeMaxDepth = _options->getClockTreeMaxDepth();
         _minInputCap = _techChar->getActualMinInputCap();
         _numMaxLeafSinks = _options->getNumMaxLeafSinks();
+        _numMinLeafSinks = _options->getNumMinLeafSinks();
         _minLengthSinkRegion = _techChar->getMinSegmentLength() * 2;
         
         initSinkRegion();
@@ -155,7 +156,12 @@ void HTreeBuilder::initTopology() {
         
         reportTopology();
 
-        if (numSinks > _numMaxLeafSinks) {
+        if (numSinks < _numMinLeafSinks) {
+                std::cout << " Number of sinks on the sinks region is too small. Exiting...\n";
+                std::exit(1);
+        }
+
+        if (numSinks >= _numMaxLeafSinks) {
                 std::cout << " Number of sinks on the sinks region is too large. Exiting...\n";
                 std::exit(1);
         }
