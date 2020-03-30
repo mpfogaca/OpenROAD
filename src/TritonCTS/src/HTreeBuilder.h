@@ -203,8 +203,18 @@ private:
                                                  unsigned branchPtIdx1,
                                                  unsigned branchPtIdx2, 
                                                  const Point<double>& rootLocation,
-                                                 const std::vector<std::pair<float, float>>& topLevelSinks );
-        
+                                                 const std::vector<std::pair<float, float>>& sinks);
+        void preClusteringOpt(const std::vector<std::pair<float, float>>& sinks,
+                              std::vector<std::pair<float, float>>& points,
+                              std::vector<unsigned>& mapSinkToPoint);
+        void assignSinksToBranches(LevelTopology& topology,
+                                   unsigned branchPtIdx1,
+                                   unsigned branchPtIdx2,
+                                   const std::vector<std::pair<float, float>>& sinks,
+                                   const std::vector<std::pair<float, float>>& points,
+                                   const std::vector<unsigned>& mapSinkToPoint,
+                                   const std::vector<std::vector<unsigned>>& clusters);        
+
         bool isSubRegionTooSmall(double width, double height) const {
                 if (width < _minLengthSinkRegion || height < _minLengthSinkRegion ) {
                         return true;
