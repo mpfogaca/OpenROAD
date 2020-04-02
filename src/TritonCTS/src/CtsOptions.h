@@ -87,8 +87,8 @@ public:
         bool runPostCtsOpt() { return _runPostCtsOpt; }
         void setBufDistRatio(double ratio) { _bufDistRatio = ratio; }
         double getBufDistRatio() { return _bufDistRatio; }
-        void setMaxPointsToCluster(unsigned maxPoints) { _maxPointsToCluster = maxPoints; }
-        unsigned getMaxPointsToCluster() { return _maxPointsToCluster; }
+        void setGeoMatchingThreshold(unsigned threshold) { _geoMatchingThreshold = threshold; }
+        unsigned getGeoMatchingThreshold() { return _geoMatchingThreshold; }
                 
 private:
         std::string _blockName               = "";
@@ -108,7 +108,7 @@ private:
         bool        _writeOnlyClockNets      = false;
         bool        _runPostCtsOpt           = true;
         double      _bufDistRatio            = 0.1;
-        unsigned    _maxPointsToCluster      = 100000;
+        unsigned    _geoMatchingThreshold    = 100000;
 };
 
 }

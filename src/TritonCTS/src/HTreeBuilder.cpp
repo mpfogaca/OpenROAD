@@ -429,7 +429,7 @@ void HTreeBuilder::preClusteringOpt(const std::vector<std::pair<float, float>>& 
                 mapSinkToPoint.push_back(point);
         }
 
-        while (points.size() > _options->getMaxPointsToCluster()) {
+        while (points.size() > _options->getGeoMatchingThreshold()) {
                 GeoMatching matching;
                 unsigned numPoints = points.size();
                 if (numPoints % 2 != 0) {

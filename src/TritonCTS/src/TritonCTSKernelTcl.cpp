@@ -82,4 +82,8 @@ void TritonCTSKernel::set_root_buffer(const char* buffer) {
         _options.setRootBuffer(buffer);
 }
 
+void TritonCTSKernel::set_geo_matching_threshold(unsigned threshold) {
+	_options.setGeoMatchingThreshold(threshold);
+}
+
 }

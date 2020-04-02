@@ -93,7 +93,8 @@ public:
         void set_wire_segment_distance_unit(unsigned unit);
         void run_triton_cts();
         void report_characterization();
-        void report_wire_segments(unsigned length, unsigned load, unsigned outputSlew); 
+        void report_wire_segments(unsigned length, unsigned load, unsigned outputSlew);
+	void set_geo_matching_threshold(unsigned threshold);
 };
 
 }

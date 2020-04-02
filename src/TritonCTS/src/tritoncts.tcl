@@ -44,12 +44,13 @@ sta::define_cmd_args "clock_tree_synthesis" {[-lut_file lut] \
                                              [-sol_list slist] \
                                              [-root_buf buf] \
                                              [-wire_unit unit] \
-                                             [-clk_nets nets] \ 
+                                             [-clk_nets nets] \
+					     [-geo_matching_threshold] \
                                             } 
 
 proc clock_tree_synthesis { args } {
   sta::parse_key_args "clock_tree_synthesis" args \
-    keys {-lut_file -sol_list -root_buf -wire_unit -clk_nets} flags {}
+    keys {-lut_file -sol_list -root_buf -wire_unit -clk_nets -geo_matching_threshold} flags {}
 
   set cts [get_triton_cts]
 
@@ -84,6 +85,13 @@ proc clock_tree_synthesis { args } {
   if { [info exists keys(-clk_nets)] } {
         set clk_nets $keys(-clk_nets)
         $cts set_clock_nets $clk_nets
+  }
+
+
+  if { [info exists keys(-geo_matching_threshold)] } {
+        set threshold $keys(-geo_matching_threshold)
+	puts $threshold
+        $cts set_geo_matching_threshold $threshold
   }
 
   $cts set_lut_file $lut 

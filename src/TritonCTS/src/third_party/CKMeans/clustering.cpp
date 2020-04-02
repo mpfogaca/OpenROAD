@@ -295,7 +295,7 @@ float clustering::Kmeans (unsigned N, unsigned CAP, unsigned IDX, vector<pair<fl
 //            	}
 //            	cout << endl;
 //        	}
-			plotClusters(clusters, means);
+			//plotClusters(clusters, means);
 //        }
 		
 		this->clusters = clusters;
