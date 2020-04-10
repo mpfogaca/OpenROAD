@@ -110,6 +110,37 @@ proc write_db { args } {
   ord::write_db_cmd $filename
 }
 
+sta::define_cmd_args "set_layer_rc" { [-layer] layer_id \
+                                      [-capacitance] value \
+                                      [-resistance] value }
+proc set_layer_rc {args} {
+  sta::parse_key_args "set_layer_rc" args keys {-layer -capacitance -resistance} flags {}
+
+  if { ![info exists keys(-layer)] } {
+    sta::sta_error "layer not specified."
+  }
+
+  set db [ord::get_db]
+  set tech [$db getTech]
+  set techLayer [$tech findRoutingLayer $keys(-layer)]
+
+  if { $techLayer == "NULL" } {
+    sta::sta_error "layer not found."
+  }
+  
+  if { ![info exists keys(-capacitance)] && ![info exists keys(-resistance)] } {
+    sta::sta_error "use -capacitance <value> or -resistance <value>."
+  }
+
+  if { [info exists keys(-capacitance)] } {
+    $techLayer setCapacitance $keys(-capacitance)   
+  }
+
+  if { [info exists keys(-resistance)] } {
+    $techLayer setResistance $keys(-resistance)   
+  }
+}
+
 ################################################################
 
 namespace eval ord {
